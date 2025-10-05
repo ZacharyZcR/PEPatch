@@ -85,11 +85,23 @@ func (r *Reporter) printImports() {
 
 	for i, imp := range r.info.Imports {
 		green := color.New(color.FgGreen)
-		green.Printf("  %3d. %s\n", i+1, imp.DLL)
+		funcCount := len(imp.Functions)
+		green.Printf("  %3d. %s (%d 个函数)\n", i+1, imp.DLL, funcCount)
 
-		if len(imp.Functions) > 0 && imp.Functions[0] != "(symbols not individually listed)" {
-			for _, fn := range imp.Functions {
-				fmt.Printf("       - %s\n", fn)
+		if funcCount > 0 && imp.Functions[0] != "(symbols not individually listed)" {
+			const maxDisplay = 10
+			displayCount := funcCount
+			if displayCount > maxDisplay {
+				displayCount = maxDisplay
+			}
+
+			for j := 0; j < displayCount; j++ {
+				fmt.Printf("       - %s\n", imp.Functions[j])
+			}
+
+			if funcCount > maxDisplay {
+				gray := color.New(color.FgHiBlack)
+				gray.Printf("       ... (还有 %d 个函数)\n", funcCount-maxDisplay)
 			}
 		}
 	}

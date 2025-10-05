@@ -3,6 +3,7 @@ package pe
 import (
 	"debug/pe"
 	"fmt"
+	"strings"
 )
 
 // Info contains analyzed PE file information.
@@ -101,25 +102,29 @@ func (a *Analyzer) extractSections(f *pe.File, info *Info) {
 }
 
 func (a *Analyzer) extractImports(f *pe.File, info *Info) {
-	imports, err := f.ImportedSymbols()
+	symbols, err := f.ImportedSymbols()
 	if err != nil {
 		return
 	}
 
+	// Parse "FunctionName:DLL.dll" format and group by DLL
 	dllMap := make(map[string][]string)
-	for _, imp := range imports {
-		dllMap[imp] = append(dllMap[imp], imp)
+	for _, symbol := range symbols {
+		// Split "FunctionName:DLL.dll" -> ["FunctionName", "DLL.dll"]
+		parts := strings.Split(symbol, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		funcName := parts[0]
+		dllName := parts[1]
+		dllMap[dllName] = append(dllMap[dllName], funcName)
 	}
 
-	libs, err := f.ImportedLibraries()
-	if err != nil {
-		return
-	}
-
-	for _, lib := range libs {
+	// Convert map to slice
+	for dll, funcs := range dllMap {
 		info.Imports = append(info.Imports, ImportInfo{
-			DLL:       lib,
-			Functions: []string{"(symbols not individually listed)"},
+			DLL:       dll,
+			Functions: funcs,
 		})
 	}
 }
