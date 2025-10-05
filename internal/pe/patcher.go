@@ -189,3 +189,45 @@ func (p *Patcher) SetSectionPermissions(sectionName string, read, write, execute
 
 	return p.PatchSectionPermissions(sectionName, perms)
 }
+
+// PatchEntryPoint modifies the PE entry point address.
+func (p *Patcher) PatchEntryPoint(newEntryPoint uint32) error {
+	// Read DOS header to get e_lfanew
+	dosHeader := make([]byte, 64)
+	_, err := p.file.ReadAt(dosHeader, 0)
+	if err != nil {
+		return fmt.Errorf("读取DOS头失败: %w", err)
+	}
+
+	peHeaderOffset := int64(binary.LittleEndian.Uint32(dosHeader[60:64]))
+
+	// AddressOfEntryPoint is at offset 16 in Optional Header
+	// e_lfanew + PE Signature(4) + COFF Header(20) + AddressOfEntryPoint offset(16)
+	entryPointOffset := peHeaderOffset + 4 + 20 + 16
+
+	// Validate the new entry point is within reasonable bounds
+	if newEntryPoint == 0 {
+		return fmt.Errorf("入口点地址不能为0")
+	}
+
+	// Write new entry point
+	entryPointBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(entryPointBytes, newEntryPoint)
+
+	_, err = p.file.WriteAt(entryPointBytes, entryPointOffset)
+	if err != nil {
+		return fmt.Errorf("写入入口点失败: %w", err)
+	}
+
+	return nil
+}
+
+// GetEntryPoint returns the current entry point address.
+func (p *Patcher) GetEntryPoint() (uint32, error) {
+	if oh32, ok := p.peFile.OptionalHeader.(*pe.OptionalHeader32); ok {
+		return oh32.AddressOfEntryPoint, nil
+	} else if oh64, ok := p.peFile.OptionalHeader.(*pe.OptionalHeader64); ok {
+		return uint32(oh64.AddressOfEntryPoint), nil
+	}
+	return 0, fmt.Errorf("无法读取入口点")
+}
