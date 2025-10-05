@@ -153,37 +153,42 @@ func (r *Reporter) printResources() {
 	yellow := color.New(color.FgYellow, color.Bold)
 	yellow.Println("\n【资源信息】")
 
-	// Version information
-	if res.VersionInfo != nil {
-		v := res.VersionInfo
+	r.printVersionInfo(res.VersionInfo)
+	r.printOtherResources(res)
+}
 
-		if v.FileDescription != "" {
-			fmt.Printf("  %-20s: %s\n", "文件描述", v.FileDescription)
-		}
-		if v.FileVersion != "" {
-			fmt.Printf("  %-20s: %s\n", "文件版本", v.FileVersion)
-		}
-		if v.ProductName != "" {
-			fmt.Printf("  %-20s: %s\n", "产品名称", v.ProductName)
-		}
-		if v.ProductVersion != "" {
-			fmt.Printf("  %-20s: %s\n", "产品版本", v.ProductVersion)
-		}
-		if v.CompanyName != "" {
-			fmt.Printf("  %-20s: %s\n", "公司名称", v.CompanyName)
-		}
-		if v.LegalCopyright != "" {
-			fmt.Printf("  %-20s: %s\n", "版权信息", v.LegalCopyright)
-		}
-		if v.InternalName != "" {
-			fmt.Printf("  %-20s: %s\n", "内部名称", v.InternalName)
-		}
-		if v.OriginalFilename != "" {
-			fmt.Printf("  %-20s: %s\n", "原始文件名", v.OriginalFilename)
-		}
+func (r *Reporter) printVersionInfo(v *pe.VersionInfo) {
+	if v == nil {
+		return
 	}
 
-	// Icon and string resources
+	if v.FileDescription != "" {
+		fmt.Printf("  %-20s: %s\n", "文件描述", v.FileDescription)
+	}
+	if v.FileVersion != "" {
+		fmt.Printf("  %-20s: %s\n", "文件版本", v.FileVersion)
+	}
+	if v.ProductName != "" {
+		fmt.Printf("  %-20s: %s\n", "产品名称", v.ProductName)
+	}
+	if v.ProductVersion != "" {
+		fmt.Printf("  %-20s: %s\n", "产品版本", v.ProductVersion)
+	}
+	if v.CompanyName != "" {
+		fmt.Printf("  %-20s: %s\n", "公司名称", v.CompanyName)
+	}
+	if v.LegalCopyright != "" {
+		fmt.Printf("  %-20s: %s\n", "版权信息", v.LegalCopyright)
+	}
+	if v.InternalName != "" {
+		fmt.Printf("  %-20s: %s\n", "内部名称", v.InternalName)
+	}
+	if v.OriginalFilename != "" {
+		fmt.Printf("  %-20s: %s\n", "原始文件名", v.OriginalFilename)
+	}
+}
+
+func (r *Reporter) printOtherResources(res *pe.ResourceInfo) {
 	if res.HasIcon {
 		fmt.Printf("  %-20s: 是", "包含图标")
 		if res.IconCount > 0 {

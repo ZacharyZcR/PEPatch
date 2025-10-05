@@ -29,7 +29,7 @@ type CertificateInfo struct {
 	IsValid      bool
 }
 
-// WIN_CERTIFICATE structure
+// WIN_CERTIFICATE structure.
 type winCertificate struct {
 	Length          uint32
 	Revision        uint16
@@ -100,13 +100,13 @@ func VerifySignature(f *pe.File, r io.ReaderAt) (*SignatureInfo, error) {
 	return info, nil
 }
 
-// PKCS#7 ContentInfo structure
+// PKCS#7 ContentInfo structure.
 type contentInfo struct {
 	ContentType asn1.ObjectIdentifier
 	Content     asn1.RawValue `asn1:"explicit,optional,tag:0"`
 }
 
-// PKCS#7 SignedData structure (simplified)
+// PKCS#7 SignedData structure (simplified).
 type signedData struct {
 	Version          int
 	DigestAlgorithms []pkix.AlgorithmIdentifier `asn1:"set"`

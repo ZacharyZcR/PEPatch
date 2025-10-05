@@ -28,7 +28,7 @@ type VersionInfo struct {
 	LegalCopyright string
 }
 
-// Resource types
+// Resource types.
 const (
 	RT_ICON        = 3
 	RT_STRING      = 6
@@ -36,7 +36,7 @@ const (
 	RT_VERSION     = 16
 )
 
-// IMAGE_RESOURCE_DIRECTORY structure
+// IMAGE_RESOURCE_DIRECTORY structure.
 type resourceDirectory struct {
 	Characteristics      uint32
 	TimeDateStamp        uint32
@@ -46,13 +46,13 @@ type resourceDirectory struct {
 	NumberOfIdEntries    uint16
 }
 
-// IMAGE_RESOURCE_DIRECTORY_ENTRY structure
+// IMAGE_RESOURCE_DIRECTORY_ENTRY structure.
 type resourceDirectoryEntry struct {
 	NameOrID uint32
 	OffsetToDataOrDirectory uint32
 }
 
-// IMAGE_RESOURCE_DATA_ENTRY structure
+// IMAGE_RESOURCE_DATA_ENTRY structure.
 type resourceDataEntry struct {
 	OffsetToData uint32
 	Size         uint32
@@ -129,7 +129,7 @@ func parseResourceDirectory(f *pe.File, r io.ReaderAt, baseOffset, currentOffset
 				switch typeID {
 				case RT_VERSION:
 					// Parse version info
-					parseVersionResource(f, r, baseOffset, newOffset, info)
+					_ = parseVersionResource(f, r, baseOffset, newOffset, info)
 				case RT_ICON:
 					info.HasIcon = true
 					info.IconCount++
@@ -220,7 +220,7 @@ func parseVersionResource(f *pe.File, r io.ReaderAt, baseOffset, dirOffset int64
 	return nil
 }
 
-// VS_VERSIONINFO header
+// VS_VERSIONINFO header.
 type vsVersionInfo struct {
 	Length      uint16
 	ValueLength uint16
