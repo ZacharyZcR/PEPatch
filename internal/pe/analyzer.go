@@ -17,6 +17,7 @@ type Info struct {
 	Checksum     *ChecksumInfo
 	Signature    *SignatureInfo
 	Resources    *ResourceInfo
+	TLS          *TLSInfo
 	Sections     []SectionInfo
 	Imports      []ImportInfo
 	Exports      []string
@@ -68,6 +69,7 @@ func (a *Analyzer) Analyze() (*Info, error) {
 	a.verifyChecksum(f, info)
 	a.verifySignature(f, info)
 	a.parseResources(f, info)
+	a.parseTLS(f, info)
 
 	return info, nil
 }
@@ -181,6 +183,15 @@ func (a *Analyzer) parseResources(f *pe.File, info *Info) {
 		return
 	}
 	info.Resources = resources
+}
+
+func (a *Analyzer) parseTLS(f *pe.File, info *Info) {
+	tls, err := ParseTLS(f, a.reader.RawFile())
+	if err != nil {
+		// Silently ignore TLS parsing errors
+		return
+	}
+	info.TLS = tls
 }
 
 func getSubsystem(subsystem uint16) string {

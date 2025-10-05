@@ -37,6 +37,7 @@ func (r *Reporter) Print() {
 	r.printBasicInfo()
 	r.printSignature()
 	r.printResources()
+	r.printTLS()
 	r.printSections()
 	r.printImports()
 	r.printExports()
@@ -192,6 +193,44 @@ func (r *Reporter) printResources() {
 
 	if res.StringCount > 0 {
 		fmt.Printf("  %-20s: %d\n", "字符串表数量", res.StringCount)
+	}
+}
+
+func (r *Reporter) printTLS() {
+	if r.info.TLS == nil || !r.info.TLS.HasTLS {
+		return
+	}
+
+	yellow := color.New(color.FgYellow, color.Bold)
+	yellow.Println("\n【TLS 回调】")
+
+	tls := r.info.TLS
+
+	if len(tls.Callbacks) == 0 {
+		gray := color.New(color.FgHiBlack)
+		gray.Println("  有 TLS 目录但无回调函数")
+		return
+	}
+
+	// TLS callbacks are suspicious - often used by malware for anti-debugging
+	red := color.New(color.FgRed, color.Bold)
+	red.Printf("  ⚠ 发现 %d 个 TLS 回调函数 (可疑)\n", len(tls.Callbacks))
+
+	fmt.Println("  TLS 回调函数地址:")
+	for i, callback := range tls.Callbacks {
+		if i >= 10 && !r.verbose {
+			gray := color.New(color.FgHiBlack)
+			gray.Printf("  ... (还有 %d 个回调)\n", len(tls.Callbacks)-10)
+			break
+		}
+		fmt.Printf("    %2d. 0x%016X\n", i+1, callback)
+	}
+
+	if r.verbose {
+		fmt.Printf("\n  原始数据地址: 0x%016X\n", tls.StartAddressOfRawData)
+		fmt.Printf("  结束地址:     0x%016X\n", tls.EndAddressOfRawData)
+		fmt.Printf("  索引地址:     0x%016X\n", tls.AddressOfIndex)
+		fmt.Printf("  零填充大小:   %d 字节\n", tls.SizeOfZeroFill)
 	}
 }
 
