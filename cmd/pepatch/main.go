@@ -71,19 +71,14 @@ func analyzePE(filepath string) error {
 }
 
 func patchPE(filepath string) error {
-	// Validate parameters - at least one patch operation required
+	// Validate parameters
 	if *sectionName == "" && *entryPoint == "" {
 		return fmt.Errorf("必须指定至少一个修改操作 (-section 或 -entry)")
 	}
 
-	// Create backup if requested
-	if *createBackup {
-		backupPath := filepath + ".bak"
-		if err := copyFile(filepath, backupPath); err != nil {
-			return fmt.Errorf("创建备份失败: %w", err)
-		}
-		green := color.New(color.FgGreen)
-		green.Printf("✓ 已创建备份: %s\n", backupPath)
+	// Create backup
+	if err := createBackupIfNeeded(filepath); err != nil {
+		return err
 	}
 
 	// Open patcher
@@ -93,69 +88,101 @@ func patchPE(filepath string) error {
 	}
 	defer patcher.Close()
 
-	cyan := color.New(color.FgCyan)
+	// Apply patches
 	modified := false
-
-	// Patch section permissions if requested
 	if *sectionName != "" && *permissions != "" {
-		read, write, execute, err := parsePermissions(*permissions)
-		if err != nil {
-			return err
-		}
-
-		cyan.Printf("正在修改节区 '%s' 的权限...\n", *sectionName)
-		err = patcher.SetSectionPermissions(*sectionName, read, write, execute)
-		if err != nil {
+		if err := patchSectionPerms(patcher); err != nil {
 			return err
 		}
 		modified = true
 	}
 
-	// Patch entry point if requested
 	if *entryPoint != "" {
-		var newEntry uint32
-		_, err := fmt.Sscanf(*entryPoint, "0x%x", &newEntry)
-		if err != nil {
-			// Try without 0x prefix
-			_, err = fmt.Sscanf(*entryPoint, "%x", &newEntry)
-			if err != nil {
-				return fmt.Errorf("入口点地址格式错误: %s (应为十六进制，例如: 0x1000)", *entryPoint)
-			}
-		}
-
-		// Show current entry point
-		currentEntry, err := patcher.GetEntryPoint()
-		if err == nil {
-			cyan.Printf("当前入口点: 0x%X\n", currentEntry)
-		}
-
-		cyan.Printf("正在修改入口点为: 0x%X...\n", newEntry)
-		err = patcher.PatchEntryPoint(newEntry)
-		if err != nil {
+		if err := patchEntryPointAddr(patcher); err != nil {
 			return err
 		}
 		modified = true
 	}
 
-	// Update checksum if requested and something was modified
+	// Update checksum
 	if modified && *updateCksum {
+		cyan := color.New(color.FgCyan)
 		cyan.Println("正在更新PE校验和...")
 		if err := patcher.UpdateChecksum(); err != nil {
 			return err
 		}
 	}
 
-	// Print success message
+	printPatchSuccess()
+	return nil
+}
+
+func createBackupIfNeeded(filepath string) error {
+	if !*createBackup {
+		return nil
+	}
+
+	backupPath := filepath + ".bak"
+	if err := copyFile(filepath, backupPath); err != nil {
+		return fmt.Errorf("创建备份失败: %w", err)
+	}
+
+	green := color.New(color.FgGreen)
+	green.Printf("✓ 已创建备份: %s\n", backupPath)
+	return nil
+}
+
+func patchSectionPerms(patcher *pe.Patcher) error {
+	read, write, execute, err := parsePermissions(*permissions)
+	if err != nil {
+		return err
+	}
+
+	cyan := color.New(color.FgCyan)
+	cyan.Printf("正在修改节区 '%s' 的权限...\n", *sectionName)
+
+	return patcher.SetSectionPermissions(*sectionName, read, write, execute)
+}
+
+func patchEntryPointAddr(patcher *pe.Patcher) error {
+	newEntry, err := parseHexAddress(*entryPoint)
+	if err != nil {
+		return err
+	}
+
+	cyan := color.New(color.FgCyan)
+
+	// Show current entry point
+	if currentEntry, err := patcher.GetEntryPoint(); err == nil {
+		cyan.Printf("当前入口点: 0x%X\n", currentEntry)
+	}
+
+	cyan.Printf("正在修改入口点为: 0x%X...\n", newEntry)
+	return patcher.PatchEntryPoint(newEntry)
+}
+
+func parseHexAddress(addr string) (uint32, error) {
+	var result uint32
+	_, err := fmt.Sscanf(addr, "0x%x", &result)
+	if err != nil {
+		_, err = fmt.Sscanf(addr, "%x", &result)
+		if err != nil {
+			return 0, fmt.Errorf("入口点地址格式错误: %s (应为十六进制，例如: 0x1000)", addr)
+		}
+	}
+	return result, nil
+}
+
+func printPatchSuccess() {
 	green := color.New(color.FgGreen, color.Bold)
+	fmt.Println()
 	if *sectionName != "" && *permissions != "" {
-		green.Printf("\n✓ 成功修改节区权限: %s -> %s\n", *sectionName, *permissions)
+		green.Printf("✓ 成功修改节区权限: %s -> %s\n", *sectionName, *permissions)
 	}
 	if *entryPoint != "" {
 		green.Printf("✓ 成功修改入口点: %s\n", *entryPoint)
 	}
 	fmt.Println()
-
-	return nil
 }
 
 func parsePermissions(perms string) (read, write, execute bool, err error) {
