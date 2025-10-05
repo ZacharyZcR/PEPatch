@@ -14,116 +14,174 @@ import (
 	"github.com/ZacharyZcR/PEPatch/internal/pe"
 )
 
+type guiComponents struct {
+	window         fyne.Window
+	filePathEntry  *widget.Entry
+	analysisOutput *widget.Entry
+	statusLabel    *widget.Label
+	sectionEntry   *widget.Entry
+	permsEntry     *widget.Entry
+	entryEntry     *widget.Entry
+}
+
 func main() {
 	myApp := app.New()
 	myWindow := myApp.NewWindow("PEPatch - PE文件分析与修改工具")
 	myWindow.Resize(fyne.NewSize(900, 700))
 
-	// File path
+	components := createGUIComponents(myWindow)
+	mainContent := createMainLayout(components)
+
+	myWindow.SetContent(mainContent)
+	myWindow.ShowAndRun()
+}
+
+func createGUIComponents(myWindow fyne.Window) *guiComponents {
 	filePathEntry := widget.NewEntry()
 	filePathEntry.SetPlaceHolder("选择PE文件...")
 
-	// Analysis output
 	analysisOutput := widget.NewMultiLineEntry()
 	analysisOutput.SetPlaceHolder("分析结果将显示在这里...")
 	analysisOutput.Disable()
 
-	// Status label
 	statusLabel := widget.NewLabel("就绪")
 
-	// File picker button
-	fileButton := widget.NewButton("选择文件", func() {
+	sectionEntry := widget.NewEntry()
+	sectionEntry.SetPlaceHolder(".text")
+
+	permsEntry := widget.NewEntry()
+	permsEntry.SetPlaceHolder("R-X")
+
+	entryEntry := widget.NewEntry()
+	entryEntry.SetPlaceHolder("0x1000")
+
+	return &guiComponents{
+		window:         myWindow,
+		filePathEntry:  filePathEntry,
+		analysisOutput: analysisOutput,
+		statusLabel:    statusLabel,
+		sectionEntry:   sectionEntry,
+		permsEntry:     permsEntry,
+		entryEntry:     entryEntry,
+	}
+}
+
+func createMainLayout(c *guiComponents) *fyne.Container {
+	fileButton := createFilePickerButton(c)
+	analyzeButton := createAnalyzeButton(c)
+	patchSectionButton := createPatchSectionButton(c)
+	patchEntryButton := createPatchEntryButton(c)
+
+	fileBox := container.NewBorder(nil, nil, nil, fileButton, c.filePathEntry)
+	analysisBox := container.NewVScroll(c.analysisOutput)
+	patchBox := createPatchBox(c, patchSectionButton, patchEntryButton)
+
+	return container.NewBorder(
+		container.NewVBox(
+			widget.NewLabel("PE文件路径:"),
+			fileBox,
+			widget.NewSeparator(),
+			analyzeButton,
+		),
+		container.NewVBox(
+			widget.NewSeparator(),
+			c.statusLabel,
+		),
+		nil,
+		container.NewVBox(
+			widget.NewSeparator(),
+			patchBox,
+		),
+		analysisBox,
+	)
+}
+
+func createFilePickerButton(c *guiComponents) *widget.Button {
+	return widget.NewButton("选择文件", func() {
 		dialog.ShowFileOpen(func(file fyne.URIReadCloser, err error) {
 			if err != nil || file == nil {
 				return
 			}
 			defer func() { _ = file.Close() }()
-			filePathEntry.SetText(file.URI().Path())
-		}, myWindow)
+			c.filePathEntry.SetText(file.URI().Path())
+		}, c.window)
 	})
+}
 
-	// Analyze button
-	analyzeButton := widget.NewButton("分析", func() {
-		if filePathEntry.Text == "" {
-			dialog.ShowError(fmt.Errorf("请先选择PE文件"), myWindow)
+func createAnalyzeButton(c *guiComponents) *widget.Button {
+	return widget.NewButton("分析", func() {
+		if c.filePathEntry.Text == "" {
+			dialog.ShowError(fmt.Errorf("请先选择PE文件"), c.window)
 			return
 		}
 
-		statusLabel.SetText("正在分析...")
+		c.statusLabel.SetText("正在分析...")
 		go func() {
-			result, err := analyzePEFile(filePathEntry.Text)
+			result, err := analyzePEFile(c.filePathEntry.Text)
 			if err != nil {
-				dialog.ShowError(err, myWindow)
-				statusLabel.SetText("分析失败")
+				dialog.ShowError(err, c.window)
+				c.statusLabel.SetText("分析失败")
 				return
 			}
-			analysisOutput.SetText(result)
-			statusLabel.SetText("分析完成")
+			c.analysisOutput.SetText(result)
+			c.statusLabel.SetText("分析完成")
 		}()
 	})
+}
 
-	// Patch section - Section permissions
-	sectionEntry := widget.NewEntry()
-	sectionEntry.SetPlaceHolder(".text")
-	permsEntry := widget.NewEntry()
-	permsEntry.SetPlaceHolder("R-X")
-
-	patchSectionButton := widget.NewButton("修改节区权限", func() {
-		if filePathEntry.Text == "" {
-			dialog.ShowError(fmt.Errorf("请先选择PE文件"), myWindow)
+func createPatchSectionButton(c *guiComponents) *widget.Button {
+	return widget.NewButton("修改节区权限", func() {
+		if c.filePathEntry.Text == "" {
+			dialog.ShowError(fmt.Errorf("请先选择PE文件"), c.window)
 			return
 		}
-		if sectionEntry.Text == "" || permsEntry.Text == "" {
-			dialog.ShowError(fmt.Errorf("请输入节区名称和权限"), myWindow)
+		if c.sectionEntry.Text == "" || c.permsEntry.Text == "" {
+			dialog.ShowError(fmt.Errorf("请输入节区名称和权限"), c.window)
 			return
 		}
 
-		statusLabel.SetText("正在修改节区权限...")
+		c.statusLabel.SetText("正在修改节区权限...")
 		go func() {
-			err := patchSection(filePathEntry.Text, sectionEntry.Text, permsEntry.Text)
+			err := patchSection(c.filePathEntry.Text, c.sectionEntry.Text, c.permsEntry.Text)
 			if err != nil {
-				dialog.ShowError(err, myWindow)
-				statusLabel.SetText("修改失败")
+				dialog.ShowError(err, c.window)
+				c.statusLabel.SetText("修改失败")
 				return
 			}
-			dialog.ShowInformation("成功", fmt.Sprintf("成功修改节区 %s 权限为 %s", sectionEntry.Text, permsEntry.Text), myWindow)
-			statusLabel.SetText("修改完成")
+			dialog.ShowInformation("成功",
+				fmt.Sprintf("成功修改节区 %s 权限为 %s", c.sectionEntry.Text, c.permsEntry.Text), c.window)
+			c.statusLabel.SetText("修改完成")
 		}()
 	})
+}
 
-	// Entry point patch
-	entryEntry := widget.NewEntry()
-	entryEntry.SetPlaceHolder("0x1000")
-
-	patchEntryButton := widget.NewButton("修改入口点", func() {
-		if filePathEntry.Text == "" {
-			dialog.ShowError(fmt.Errorf("请先选择PE文件"), myWindow)
+func createPatchEntryButton(c *guiComponents) *widget.Button {
+	return widget.NewButton("修改入口点", func() {
+		if c.filePathEntry.Text == "" {
+			dialog.ShowError(fmt.Errorf("请先选择PE文件"), c.window)
 			return
 		}
-		if entryEntry.Text == "" {
-			dialog.ShowError(fmt.Errorf("请输入入口点地址"), myWindow)
+		if c.entryEntry.Text == "" {
+			dialog.ShowError(fmt.Errorf("请输入入口点地址"), c.window)
 			return
 		}
 
-		statusLabel.SetText("正在修改入口点...")
+		c.statusLabel.SetText("正在修改入口点...")
 		go func() {
-			err := patchEntryPoint(filePathEntry.Text, entryEntry.Text)
+			err := patchEntryPoint(c.filePathEntry.Text, c.entryEntry.Text)
 			if err != nil {
-				dialog.ShowError(err, myWindow)
-				statusLabel.SetText("修改失败")
+				dialog.ShowError(err, c.window)
+				c.statusLabel.SetText("修改失败")
 				return
 			}
-			dialog.ShowInformation("成功", fmt.Sprintf("成功修改入口点为 %s", entryEntry.Text), myWindow)
-			statusLabel.SetText("修改完成")
+			dialog.ShowInformation("成功", fmt.Sprintf("成功修改入口点为 %s", c.entryEntry.Text), c.window)
+			c.statusLabel.SetText("修改完成")
 		}()
 	})
+}
 
-	// Layout
-	fileBox := container.NewBorder(nil, nil, nil, fileButton, filePathEntry)
-
-	analysisBox := container.NewVScroll(analysisOutput)
-
-	patchBox := container.NewVBox(
+func createPatchBox(c *guiComponents, patchSectionButton, patchEntryButton *widget.Button) *fyne.Container {
+	return container.NewVBox(
 		widget.NewLabel("节区权限修改:"),
 		container.NewGridWithColumns(3,
 			widget.NewLabel("节区名称:"),
@@ -131,8 +189,8 @@ func main() {
 			widget.NewLabel(""),
 		),
 		container.NewGridWithColumns(3,
-			sectionEntry,
-			permsEntry,
+			c.sectionEntry,
+			c.permsEntry,
 			patchSectionButton,
 		),
 		widget.NewSeparator(),
@@ -142,32 +200,10 @@ func main() {
 			widget.NewLabel(""),
 		),
 		container.NewGridWithColumns(2,
-			entryEntry,
+			c.entryEntry,
 			patchEntryButton,
 		),
 	)
-
-	mainContent := container.NewBorder(
-		container.NewVBox(
-			widget.NewLabel("PE文件路径:"),
-			fileBox,
-			widget.NewSeparator(),
-			analyzeButton,
-		),
-		container.NewVBox(
-			widget.NewSeparator(),
-			statusLabel,
-		),
-		nil,
-		container.NewVBox(
-			widget.NewSeparator(),
-			patchBox,
-		),
-		analysisBox,
-	)
-
-	myWindow.SetContent(mainContent)
-	myWindow.ShowAndRun()
 }
 
 func analyzePEFile(filepath string) (string, error) {
