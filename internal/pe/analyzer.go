@@ -136,28 +136,3 @@ func getSubsystem(subsystem uint16) string {
 		return fmt.Sprintf("未知 (0x%X)", subsystem)
 	}
 }
-
-func getSectionCharacteristics(c uint32) []string {
-	var flags []string
-
-	if c&pe.IMAGE_SCN_CNT_CODE != 0 {
-		flags = append(flags, "CODE")
-	}
-	if c&pe.IMAGE_SCN_CNT_INITIALIZED_DATA != 0 {
-		flags = append(flags, "INIT_DATA")
-	}
-	if c&pe.IMAGE_SCN_CNT_UNINITIALIZED_DATA != 0 {
-		flags = append(flags, "UNINIT_DATA")
-	}
-	if c&pe.IMAGE_SCN_MEM_EXECUTE != 0 {
-		flags = append(flags, "EXECUTE")
-	}
-	if c&pe.IMAGE_SCN_MEM_READ != 0 {
-		flags = append(flags, "READ")
-	}
-	if c&pe.IMAGE_SCN_MEM_WRITE != 0 {
-		flags = append(flags, "WRITE")
-	}
-
-	return flags
-}
