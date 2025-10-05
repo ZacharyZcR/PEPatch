@@ -56,22 +56,31 @@ func (r *Reporter) printSections() {
 	}
 
 	// Header
-	fmt.Println(strings.Repeat("-", 90))
-	fmt.Printf("  %-10s %-12s %-15s %-15s %-20s\n",
-		"名称", "虚拟地址", "虚拟大小", "原始大小", "特征")
-	fmt.Println(strings.Repeat("-", 90))
+	fmt.Println(strings.Repeat("-", 100))
+	fmt.Printf("  %-10s %-12s %-15s %-15s %-8s %-20s\n",
+		"名称", "虚拟地址", "虚拟大小", "原始大小", "权限", "特征")
+	fmt.Println(strings.Repeat("-", 100))
 
 	// Rows
 	for _, section := range r.info.Sections {
-		fmt.Printf("  %-10s 0x%08X   %-15s %-15s 0x%08X\n",
+		// Highlight dangerous permissions (RWX)
+		permColor := color.New(color.FgWhite)
+		if section.Permissions == "RWX" {
+			permColor = color.New(color.FgRed, color.Bold)
+		} else if strings.Contains(section.Permissions, "X") {
+			permColor = color.New(color.FgYellow)
+		}
+
+		fmt.Printf("  %-10s 0x%08X   %-15s %-15s ",
 			section.Name,
 			section.VirtualAddress,
 			formatSize(int64(section.VirtualSize)),
 			formatSize(int64(section.Size)),
-			section.Characteristics,
 		)
+		permColor.Printf("%-8s", section.Permissions)
+		fmt.Printf(" 0x%08X\n", section.Characteristics)
 	}
-	fmt.Println(strings.Repeat("-", 90))
+	fmt.Println(strings.Repeat("-", 100))
 }
 
 func (r *Reporter) printImports() {

@@ -25,6 +25,7 @@ type SectionInfo struct {
 	VirtualSize     uint32
 	Size            uint32
 	Characteristics uint32
+	Permissions     string
 }
 
 // ImportInfo contains information about imported DLL and functions.
@@ -97,6 +98,7 @@ func (a *Analyzer) extractSections(f *pe.File, info *Info) {
 			VirtualSize:     section.VirtualSize,
 			Size:            section.Size,
 			Characteristics: section.Characteristics,
+			Permissions:     getSectionPermissions(section.Characteristics),
 		})
 	}
 }
@@ -140,4 +142,23 @@ func getSubsystem(subsystem uint16) string {
 	default:
 		return fmt.Sprintf("未知 (0x%X)", subsystem)
 	}
+}
+
+func getSectionPermissions(c uint32) string {
+	var perms [3]rune
+	perms[0] = '-'
+	perms[1] = '-'
+	perms[2] = '-'
+
+	if c&pe.IMAGE_SCN_MEM_READ != 0 {
+		perms[0] = 'R'
+	}
+	if c&pe.IMAGE_SCN_MEM_WRITE != 0 {
+		perms[1] = 'W'
+	}
+	if c&pe.IMAGE_SCN_MEM_EXECUTE != 0 {
+		perms[2] = 'X'
+	}
+
+	return string(perms[:])
 }
