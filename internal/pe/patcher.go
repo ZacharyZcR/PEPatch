@@ -76,20 +76,13 @@ func (p *Patcher) PatchSectionPermissions(sectionName string, newPerms uint32) e
 
 	// Calculate section table offset
 	// PE Header = Signature(4) + COFF Header(20) + Optional Header
-	var optionalHeaderSize uint16
-	if _, ok := p.peFile.OptionalHeader.(*pe.OptionalHeader32); ok {
-		optionalHeaderSize = 224 // Standard size for PE32
-	} else {
-		optionalHeaderSize = 240 // Standard size for PE32+
-	}
-
 	// Read actual optional header size from COFF header
 	coffHeader := make([]byte, 20)
 	_, err = p.file.ReadAt(coffHeader, peHeaderOffset+4)
 	if err != nil {
 		return fmt.Errorf("读取COFF头失败: %w", err)
 	}
-	optionalHeaderSize = binary.LittleEndian.Uint16(coffHeader[16:18])
+	optionalHeaderSize := binary.LittleEndian.Uint16(coffHeader[16:18])
 
 	sectionTableOffset := peHeaderOffset + 4 + 20 + int64(optionalHeaderSize)
 

@@ -12,11 +12,11 @@ import (
 )
 
 var (
-	// Analysis flags
+	// Analysis flags.
 	verbose        = flag.Bool("v", false, "详细模式：显示所有导入/导出函数")
 	suspiciousOnly = flag.Bool("s", false, "仅显示可疑节区（RWX权限）")
 
-	// Patch flags
+	// Patch flags.
 	patchMode    = flag.Bool("patch", false, "修改模式：修改PE文件")
 	sectionName  = flag.String("section", "", "要修改的节区名称")
 	permissions  = flag.String("perms", "", "新的权限 (例如: R-X, RW-, RWX)")
