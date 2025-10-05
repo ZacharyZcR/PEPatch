@@ -14,8 +14,8 @@ func TestCalculatePEChecksum(t *testing.T) {
 		want           uint32
 	}{
 		{
-			name: "Simple 8-byte file",
-			data: []byte{0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00},
+			name:           "Simple 8-byte file",
+			data:           []byte{0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00},
 			checksumOffset: -1, // No checksum to skip
 			want:           11, // 1 + 2 + filesize(8)
 		},
@@ -30,8 +30,8 @@ func TestCalculatePEChecksum(t *testing.T) {
 			want:           15, // 1 + 2 + filesize(12)
 		},
 		{
-			name: "Partial last DWORD",
-			data: []byte{0x01, 0x00, 0x00, 0x00, 0x02, 0x00},
+			name:           "Partial last DWORD",
+			data:           []byte{0x01, 0x00, 0x00, 0x00, 0x02, 0x00},
 			checksumOffset: -1,
 			want:           9, // 1 + 2 (padded) + filesize(6)
 		},
