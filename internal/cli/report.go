@@ -38,6 +38,7 @@ func (r *Reporter) Print() {
 	r.printSignature()
 	r.printResources()
 	r.printTLS()
+	r.printRelocations()
 	r.printSections()
 	r.printImports()
 	r.printExports()
@@ -231,6 +232,32 @@ func (r *Reporter) printTLS() {
 		fmt.Printf("  结束地址:     0x%016X\n", tls.EndAddressOfRawData)
 		fmt.Printf("  索引地址:     0x%016X\n", tls.AddressOfIndex)
 		fmt.Printf("  零填充大小:   %d 字节\n", tls.SizeOfZeroFill)
+	}
+}
+
+func (r *Reporter) printRelocations() {
+	if r.info.Relocations == nil {
+		return
+	}
+
+	reloc := r.info.Relocations
+
+	if !reloc.HasRelocations {
+		return
+	}
+
+	yellow := color.New(color.FgYellow, color.Bold)
+	yellow.Println("\n【重定位表】")
+
+	green := color.New(color.FgGreen)
+	green.Printf("  ✓ 支持 ASLR (地址空间布局随机化)\n")
+
+	fmt.Printf("  %-20s: %d\n", "重定位块数量", reloc.BlockCount)
+	fmt.Printf("  %-20s: %d\n", "重定位项总数", reloc.TotalEntries)
+
+	if reloc.TotalEntries == 0 {
+		gray := color.New(color.FgHiBlack)
+		gray.Println("  (有重定位表但无重定位项)")
 	}
 }
 

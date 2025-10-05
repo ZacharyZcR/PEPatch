@@ -18,6 +18,7 @@ type Info struct {
 	Signature    *SignatureInfo
 	Resources    *ResourceInfo
 	TLS          *TLSInfo
+	Relocations  *RelocationInfo
 	Sections     []SectionInfo
 	Imports      []ImportInfo
 	Exports      []string
@@ -70,6 +71,7 @@ func (a *Analyzer) Analyze() (*Info, error) {
 	a.verifySignature(f, info)
 	a.parseResources(f, info)
 	a.parseTLS(f, info)
+	a.parseRelocations(f, info)
 
 	return info, nil
 }
@@ -192,6 +194,15 @@ func (a *Analyzer) parseTLS(f *pe.File, info *Info) {
 		return
 	}
 	info.TLS = tls
+}
+
+func (a *Analyzer) parseRelocations(f *pe.File, info *Info) {
+	relocations, err := ParseRelocations(f, a.reader.RawFile())
+	if err != nil {
+		// Silently ignore relocation parsing errors
+		return
+	}
+	info.Relocations = relocations
 }
 
 func getSubsystem(subsystem uint16) string {
