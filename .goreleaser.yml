@@ -15,8 +15,8 @@ builds:
     goarch:
       - amd64
       - arm64
-    main: ./cmd/example
-    binary: app
+    main: ./cmd/pepatch
+    binary: pepatch
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -52,6 +52,6 @@ changelog:
 release:
   github:
     owner: ZacharyZcR
-    name: Go-Template
+    name: PEPatch
   draft: false
   prerelease: auto
