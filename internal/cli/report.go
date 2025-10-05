@@ -36,6 +36,7 @@ func (r *Reporter) Print() {
 	r.printHeader()
 	r.printBasicInfo()
 	r.printSignature()
+	r.printResources()
 	r.printSections()
 	r.printImports()
 	r.printExports()
@@ -132,6 +133,65 @@ func (r *Reporter) printSignature() {
 			statusColor.Print(status + " ")
 			fmt.Println(c.Subject)
 		}
+	}
+}
+
+func (r *Reporter) printResources() {
+	if r.info.Resources == nil {
+		return
+	}
+
+	res := r.info.Resources
+
+	// Only print if we have meaningful resource information
+	if res.VersionInfo == nil && !res.HasIcon && res.StringCount == 0 {
+		return
+	}
+
+	yellow := color.New(color.FgYellow, color.Bold)
+	yellow.Println("\n【资源信息】")
+
+	// Version information
+	if res.VersionInfo != nil {
+		v := res.VersionInfo
+
+		if v.FileDescription != "" {
+			fmt.Printf("  %-20s: %s\n", "文件描述", v.FileDescription)
+		}
+		if v.FileVersion != "" {
+			fmt.Printf("  %-20s: %s\n", "文件版本", v.FileVersion)
+		}
+		if v.ProductName != "" {
+			fmt.Printf("  %-20s: %s\n", "产品名称", v.ProductName)
+		}
+		if v.ProductVersion != "" {
+			fmt.Printf("  %-20s: %s\n", "产品版本", v.ProductVersion)
+		}
+		if v.CompanyName != "" {
+			fmt.Printf("  %-20s: %s\n", "公司名称", v.CompanyName)
+		}
+		if v.LegalCopyright != "" {
+			fmt.Printf("  %-20s: %s\n", "版权信息", v.LegalCopyright)
+		}
+		if v.InternalName != "" {
+			fmt.Printf("  %-20s: %s\n", "内部名称", v.InternalName)
+		}
+		if v.OriginalFilename != "" {
+			fmt.Printf("  %-20s: %s\n", "原始文件名", v.OriginalFilename)
+		}
+	}
+
+	// Icon and string resources
+	if res.HasIcon {
+		fmt.Printf("  %-20s: 是", "包含图标")
+		if res.IconCount > 0 {
+			fmt.Printf(" (%d 个)", res.IconCount)
+		}
+		fmt.Println()
+	}
+
+	if res.StringCount > 0 {
+		fmt.Printf("  %-20s: %d\n", "字符串表数量", res.StringCount)
 	}
 }
 
