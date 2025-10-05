@@ -35,6 +35,7 @@ func (r *Reporter) SetSuspiciousOnly(suspicious bool) {
 func (r *Reporter) Print() {
 	r.printHeader()
 	r.printBasicInfo()
+	r.printSignature()
 	r.printSections()
 	r.printImports()
 	r.printExports()
@@ -73,6 +74,64 @@ func (r *Reporter) printBasicInfo() {
 				r.info.Checksum.Stored, r.info.Checksum.Computed)
 		}
 		fmt.Println()
+	}
+}
+
+func (r *Reporter) printSignature() {
+	if r.info.Signature == nil {
+		return
+	}
+
+	yellow := color.New(color.FgYellow, color.Bold)
+	yellow.Println("\n【数字签名】")
+
+	if !r.info.Signature.IsSigned {
+		gray := color.New(color.FgHiBlack)
+		gray.Println("  未签名")
+		return
+	}
+
+	if len(r.info.Signature.Certificates) == 0 {
+		red := color.New(color.FgRed)
+		red.Println("  ✗ 已签名但无法解析证书")
+		return
+	}
+
+	// Show first certificate (signer)
+	cert := r.info.Signature.Certificates[0]
+
+	fmt.Printf("  %-20s: ", "签名者")
+	if cert.IsValid {
+		green := color.New(color.FgGreen)
+		green.Printf("✓ %s\n", cert.Subject)
+	} else {
+		red := color.New(color.FgRed)
+		red.Printf("✗ %s (已过期)\n", cert.Subject)
+	}
+
+	fmt.Printf("  %-20s: %s\n", "颁发者", cert.Issuer)
+	fmt.Printf("  %-20s: %s\n", "序列号", cert.SerialNumber)
+	fmt.Printf("  %-20s: %s\n", "有效期",
+		fmt.Sprintf("%s - %s", cert.NotBefore.Format("2006-01-02"), cert.NotAfter.Format("2006-01-02")))
+
+	if r.info.Signature.DigestAlgorithm != "" {
+		fmt.Printf("  %-20s: %s\n", "摘要算法", r.info.Signature.DigestAlgorithm)
+	}
+
+	// Show certificate chain if available
+	if len(r.info.Signature.Certificates) > 1 {
+		fmt.Printf("\n  证书链 (共 %d 个证书):\n", len(r.info.Signature.Certificates))
+		for i, c := range r.info.Signature.Certificates {
+			status := "✓"
+			statusColor := color.New(color.FgGreen)
+			if !c.IsValid {
+				status = "✗"
+				statusColor = color.New(color.FgRed)
+			}
+			fmt.Printf("    %d. ", i+1)
+			statusColor.Print(status + " ")
+			fmt.Println(c.Subject)
+		}
 	}
 }
 

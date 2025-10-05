@@ -15,6 +15,7 @@ type Info struct {
 	EntryPoint   uint64
 	ImageBase    uint64
 	Checksum     *ChecksumInfo
+	Signature    *SignatureInfo
 	Sections     []SectionInfo
 	Imports      []ImportInfo
 	Exports      []string
@@ -64,6 +65,7 @@ func (a *Analyzer) Analyze() (*Info, error) {
 	a.extractImports(f, info)
 	a.extractExports(f, info)
 	a.verifyChecksum(f, info)
+	a.verifySignature(f, info)
 
 	return info, nil
 }
@@ -159,6 +161,15 @@ func (a *Analyzer) verifyChecksum(f *pe.File, info *Info) {
 		return
 	}
 	info.Checksum = checksum
+}
+
+func (a *Analyzer) verifySignature(f *pe.File, info *Info) {
+	signature, err := VerifySignature(f, a.reader.RawFile())
+	if err != nil {
+		// Silently ignore signature verification errors
+		return
+	}
+	info.Signature = signature
 }
 
 func getSubsystem(subsystem uint16) string {
