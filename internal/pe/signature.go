@@ -13,9 +13,9 @@ import (
 
 // SignatureInfo contains PE signature information.
 type SignatureInfo struct {
-	IsSigned      bool
-	Certificates  []CertificateInfo
-	SigningTime   time.Time
+	IsSigned        bool
+	Certificates    []CertificateInfo
+	SigningTime     time.Time
 	DigestAlgorithm string
 }
 
@@ -38,7 +38,7 @@ type winCertificate struct {
 }
 
 const (
-	WIN_CERT_REVISION_2_0 = 0x0200
+	WIN_CERT_REVISION_2_0          = 0x0200
 	WIN_CERT_TYPE_PKCS_SIGNED_DATA = 0x0002
 )
 
@@ -111,8 +111,8 @@ type signedData struct {
 	Version          int
 	DigestAlgorithms []pkix.AlgorithmIdentifier `asn1:"set"`
 	ContentInfo      contentInfo
-	Certificates     asn1.RawValue              `asn1:"optional,tag:0"`
-	SignerInfos      []interface{}              `asn1:"set"`
+	Certificates     asn1.RawValue `asn1:"optional,tag:0"`
+	SignerInfos      []interface{} `asn1:"set"`
 }
 
 func parsePKCS7(data []byte, info *SignatureInfo) error {

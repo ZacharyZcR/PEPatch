@@ -18,22 +18,22 @@ type ResourceInfo struct {
 
 // VersionInfo contains version information from RT_VERSION resource.
 type VersionInfo struct {
-	FileVersion    string
-	ProductVersion string
-	CompanyName    string
-	ProductName    string
-	FileDescription string
-	InternalName   string
+	FileVersion      string
+	ProductVersion   string
+	CompanyName      string
+	ProductName      string
+	FileDescription  string
+	InternalName     string
 	OriginalFilename string
-	LegalCopyright string
+	LegalCopyright   string
 }
 
 // Resource types.
 const (
-	RT_ICON        = 3
-	RT_STRING      = 6
-	RT_GROUP_ICON  = 14
-	RT_VERSION     = 16
+	RT_ICON       = 3
+	RT_STRING     = 6
+	RT_GROUP_ICON = 14
+	RT_VERSION    = 16
 )
 
 // IMAGE_RESOURCE_DIRECTORY structure.
@@ -48,7 +48,7 @@ type resourceDirectory struct {
 
 // IMAGE_RESOURCE_DIRECTORY_ENTRY structure.
 type resourceDirectoryEntry struct {
-	NameOrID uint32
+	NameOrID                uint32
 	OffsetToDataOrDirectory uint32
 }
 
@@ -218,13 +218,6 @@ func parseVersionResource(f *pe.File, r io.ReaderAt, baseOffset, dirOffset int64
 	info.VersionInfo = parseVersionInfo(versionData)
 
 	return nil
-}
-
-// VS_VERSIONINFO header.
-type vsVersionInfo struct {
-	Length      uint16
-	ValueLength uint16
-	Type        uint16
 }
 
 func parseVersionInfo(data []byte) *VersionInfo {

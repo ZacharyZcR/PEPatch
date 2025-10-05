@@ -9,16 +9,16 @@ import (
 
 // TLSInfo contains TLS (Thread Local Storage) information.
 type TLSInfo struct {
-	HasTLS          bool
-	Callbacks       []uint64
+	HasTLS                bool
+	Callbacks             []uint64
 	StartAddressOfRawData uint64
 	EndAddressOfRawData   uint64
-	AddressOfIndex  uint64
-	SizeOfZeroFill  uint32
-	Characteristics uint32
+	AddressOfIndex        uint64
+	SizeOfZeroFill        uint32
+	Characteristics       uint32
 }
 
-// IMAGE_TLS_DIRECTORY32 structure
+// IMAGE_TLS_DIRECTORY32 structure.
 type tlsDirectory32 struct {
 	StartAddressOfRawData uint32
 	EndAddressOfRawData   uint32
@@ -28,7 +28,7 @@ type tlsDirectory32 struct {
 	Characteristics       uint32
 }
 
-// IMAGE_TLS_DIRECTORY64 structure
+// IMAGE_TLS_DIRECTORY64 structure.
 type tlsDirectory64 struct {
 	StartAddressOfRawData uint64
 	EndAddressOfRawData   uint64

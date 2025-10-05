@@ -14,13 +14,13 @@ type RelocationInfo struct {
 	TotalEntries   int
 }
 
-// IMAGE_BASE_RELOCATION structure
+// IMAGE_BASE_RELOCATION structure.
 type baseRelocationBlock struct {
 	VirtualAddress uint32
 	SizeOfBlock    uint32
 }
 
-// Relocation types
+// Relocation types.
 const (
 	IMAGE_REL_BASED_ABSOLUTE       = 0
 	IMAGE_REL_BASED_HIGH           = 1

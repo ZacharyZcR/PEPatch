@@ -15,21 +15,21 @@ func TestCalculateEntropy(t *testing.T) {
 		want     float64
 	}{
 		{
-			name:    "Empty data",
-			data:    []byte{},
-			want:    0.0,
+			name:     "Empty data",
+			data:     []byte{},
+			want:     0.0,
 			checkVal: true,
 		},
 		{
-			name:    "All same bytes (minimum entropy)",
-			data:    []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-			want:    0.0,
+			name:     "All same bytes (minimum entropy)",
+			data:     []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			want:     0.0,
 			checkVal: true,
 		},
 		{
-			name:    "All different bytes (high entropy)",
-			data:    []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
-			want:    3.0,
+			name:     "All different bytes (high entropy)",
+			data:     []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
+			want:     3.0,
 			checkVal: true,
 		},
 		{
