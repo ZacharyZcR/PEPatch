@@ -10,25 +10,35 @@ import (
 // Reader wraps debug/pe.File with additional metadata.
 type Reader struct {
 	file     *pe.File
+	rawFile  *os.File
 	filepath string
 	filesize int64
 }
 
 // Open opens a PE file for reading.
 func Open(filepath string) (*Reader, error) {
-	f, err := pe.Open(filepath)
+	// Open raw file for export parsing
+	rawFile, err := os.Open(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("打开PE文件失败: %w", err)
 	}
 
-	stat, err := os.Stat(filepath)
+	// Open with debug/pe
+	f, err := pe.NewFile(rawFile)
 	if err != nil {
-		f.Close()
+		rawFile.Close()
+		return nil, fmt.Errorf("解析PE文件失败: %w", err)
+	}
+
+	stat, err := rawFile.Stat()
+	if err != nil {
+		rawFile.Close()
 		return nil, fmt.Errorf("获取文件信息失败: %w", err)
 	}
 
 	return &Reader{
 		file:     f,
+		rawFile:  rawFile,
 		filepath: filepath,
 		filesize: stat.Size(),
 	}, nil
@@ -36,7 +46,15 @@ func Open(filepath string) (*Reader, error) {
 
 // Close closes the underlying PE file.
 func (r *Reader) Close() error {
+	if r.rawFile != nil {
+		r.rawFile.Close()
+	}
 	return r.file.Close()
+}
+
+// RawFile returns the underlying os.File for raw reading.
+func (r *Reader) RawFile() *os.File {
+	return r.rawFile
 }
 
 // File returns the underlying debug/pe.File.

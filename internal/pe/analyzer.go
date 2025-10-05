@@ -16,6 +16,7 @@ type Info struct {
 	ImageBase    uint64
 	Sections     []SectionInfo
 	Imports      []ImportInfo
+	Exports      []string
 }
 
 // SectionInfo contains information about a PE section.
@@ -59,6 +60,7 @@ func (a *Analyzer) Analyze() (*Info, error) {
 
 	a.extractSections(f, info)
 	a.extractImports(f, info)
+	a.extractExports(f, info)
 
 	return info, nil
 }
@@ -129,6 +131,15 @@ func (a *Analyzer) extractImports(f *pe.File, info *Info) {
 			Functions: funcs,
 		})
 	}
+}
+
+func (a *Analyzer) extractExports(f *pe.File, info *Info) {
+	exports, err := parseExports(f, a.reader.RawFile())
+	if err != nil {
+		// Silently ignore export parsing errors
+		return
+	}
+	info.Exports = exports
 }
 
 func getSubsystem(subsystem uint16) string {

@@ -25,6 +25,7 @@ func (r *Reporter) Print() {
 	r.printBasicInfo()
 	r.printSections()
 	r.printImports()
+	r.printExports()
 }
 
 func (r *Reporter) printHeader() {
@@ -113,6 +114,33 @@ func (r *Reporter) printImports() {
 				gray.Printf("       ... (还有 %d 个函数)\n", funcCount-maxDisplay)
 			}
 		}
+	}
+	fmt.Println()
+}
+
+func (r *Reporter) printExports() {
+	yellow := color.New(color.FgYellow, color.Bold)
+	yellow.Printf("\n【导出表】(共 %d 个函数)\n", len(r.info.Exports))
+
+	if len(r.info.Exports) == 0 {
+		fmt.Println("  未发现导出")
+		return
+	}
+
+	const maxDisplay = 20
+	displayCount := len(r.info.Exports)
+	if displayCount > maxDisplay {
+		displayCount = maxDisplay
+	}
+
+	for i := 0; i < displayCount; i++ {
+		green := color.New(color.FgGreen)
+		green.Printf("  %3d. %s\n", i+1, r.info.Exports[i])
+	}
+
+	if len(r.info.Exports) > maxDisplay {
+		gray := color.New(color.FgHiBlack)
+		gray.Printf("  ... (还有 %d 个函数)\n", len(r.info.Exports)-maxDisplay)
 	}
 	fmt.Println()
 }
