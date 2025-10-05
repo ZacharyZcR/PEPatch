@@ -57,6 +57,23 @@ func (r *Reporter) printBasicInfo() {
 	fmt.Printf("  %-20s: %s\n", "子系统", r.info.Subsystem)
 	fmt.Printf("  %-20s: 0x%X\n", "入口点", r.info.EntryPoint)
 	fmt.Printf("  %-20s: 0x%X\n", "镜像基址", r.info.ImageBase)
+
+	// Print checksum verification
+	if r.info.Checksum != nil {
+		fmt.Printf("  %-20s: ", "校验和")
+		if r.info.Checksum.Stored == 0 {
+			gray := color.New(color.FgHiBlack)
+			gray.Print("未设置")
+		} else if r.info.Checksum.Valid {
+			green := color.New(color.FgGreen)
+			green.Printf("✓ 有效 (0x%08X)", r.info.Checksum.Stored)
+		} else {
+			red := color.New(color.FgRed, color.Bold)
+			red.Printf("✗ 无效 (存储: 0x%08X, 计算: 0x%08X)",
+				r.info.Checksum.Stored, r.info.Checksum.Computed)
+		}
+		fmt.Println()
+	}
 }
 
 func (r *Reporter) printSections() {
