@@ -107,10 +107,10 @@ func (r *Reporter) printSections() {
 	}
 
 	// Header
-	fmt.Println(strings.Repeat("-", 100))
-	fmt.Printf("  %-10s %-12s %-15s %-15s %-8s %-20s\n",
-		"名称", "虚拟地址", "虚拟大小", "原始大小", "权限", "特征")
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Println(strings.Repeat("-", 110))
+	fmt.Printf("  %-10s %-12s %-15s %-15s %-8s %-10s %-20s\n",
+		"名称", "虚拟地址", "虚拟大小", "原始大小", "权限", "熵值", "特征")
+	fmt.Println(strings.Repeat("-", 110))
 
 	// Rows
 	for _, section := range sections {
@@ -122,6 +122,14 @@ func (r *Reporter) printSections() {
 			permColor = color.New(color.FgYellow)
 		}
 
+		// Highlight high entropy (possible packing/encryption)
+		entropyColor := color.New(color.FgWhite)
+		if section.Entropy > 7.0 {
+			entropyColor = color.New(color.FgRed, color.Bold) // Very high - likely packed/encrypted
+		} else if section.Entropy > 6.5 {
+			entropyColor = color.New(color.FgYellow) // High - compressed data
+		}
+
 		fmt.Printf("  %-10s 0x%08X   %-15s %-15s ",
 			section.Name,
 			section.VirtualAddress,
@@ -129,9 +137,11 @@ func (r *Reporter) printSections() {
 			formatSize(int64(section.Size)),
 		)
 		permColor.Printf("%-8s", section.Permissions)
+		fmt.Print(" ")
+		entropyColor.Printf("%-10.6f", section.Entropy)
 		fmt.Printf(" 0x%08X\n", section.Characteristics)
 	}
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Println(strings.Repeat("-", 110))
 }
 
 func (r *Reporter) printImports() {

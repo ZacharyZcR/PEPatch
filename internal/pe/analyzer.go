@@ -28,6 +28,7 @@ type SectionInfo struct {
 	Size            uint32
 	Characteristics uint32
 	Permissions     string
+	Entropy         float64
 }
 
 // ImportInfo contains information about imported DLL and functions.
@@ -96,6 +97,12 @@ func (a *Analyzer) extractBasicInfo(f *pe.File, info *Info) error {
 
 func (a *Analyzer) extractSections(f *pe.File, info *Info) {
 	for _, section := range f.Sections {
+		// Calculate entropy for this section
+		entropy, err := CalculateSectionEntropy(a.reader.RawFile(), int64(section.Offset), section.Size)
+		if err != nil {
+			entropy = 0.0 // Default to 0 on error
+		}
+
 		info.Sections = append(info.Sections, SectionInfo{
 			Name:            section.Name,
 			VirtualAddress:  section.VirtualAddress,
@@ -103,6 +110,7 @@ func (a *Analyzer) extractSections(f *pe.File, info *Info) {
 			Size:            section.Size,
 			Characteristics: section.Characteristics,
 			Permissions:     getSectionPermissions(section.Characteristics),
+			Entropy:         entropy,
 		})
 	}
 }
