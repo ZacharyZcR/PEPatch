@@ -11,12 +11,24 @@ import (
 
 // Reporter formats and prints PE analysis results.
 type Reporter struct {
-	info *pe.Info
+	info           *pe.Info
+	verbose        bool
+	suspiciousOnly bool
 }
 
 // NewReporter creates a new reporter for the given PE info.
 func NewReporter(info *pe.Info) *Reporter {
 	return &Reporter{info: info}
+}
+
+// SetVerbose enables verbose mode (show all functions).
+func (r *Reporter) SetVerbose(verbose bool) {
+	r.verbose = verbose
+}
+
+// SetSuspiciousOnly enables suspicious-only mode (show RWX sections only).
+func (r *Reporter) SetSuspiciousOnly(suspicious bool) {
+	r.suspiciousOnly = suspicious
 }
 
 // Print outputs the complete analysis report.
@@ -48,11 +60,32 @@ func (r *Reporter) printBasicInfo() {
 }
 
 func (r *Reporter) printSections() {
-	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Printf("\n【节区信息】(共 %d 个)\n", len(r.info.Sections))
+	sections := r.info.Sections
 
-	if len(r.info.Sections) == 0 {
-		fmt.Println("  未发现节区")
+	// Filter suspicious sections if flag is set
+	if r.suspiciousOnly {
+		var suspicious []pe.SectionInfo
+		for _, s := range sections {
+			if s.Permissions == "RWX" {
+				suspicious = append(suspicious, s)
+			}
+		}
+		sections = suspicious
+	}
+
+	yellow := color.New(color.FgYellow, color.Bold)
+	if r.suspiciousOnly {
+		yellow.Printf("\n【可疑节区】(共 %d 个)\n", len(sections))
+	} else {
+		yellow.Printf("\n【节区信息】(共 %d 个)\n", len(sections))
+	}
+
+	if len(sections) == 0 {
+		if r.suspiciousOnly {
+			fmt.Println("  未发现可疑节区")
+		} else {
+			fmt.Println("  未发现节区")
+		}
 		return
 	}
 
@@ -63,7 +96,7 @@ func (r *Reporter) printSections() {
 	fmt.Println(strings.Repeat("-", 100))
 
 	// Rows
-	for _, section := range r.info.Sections {
+	for _, section := range sections {
 		// Highlight dangerous permissions (RWX)
 		permColor := color.New(color.FgWhite)
 		if section.Permissions == "RWX" {
@@ -99,7 +132,11 @@ func (r *Reporter) printImports() {
 		green.Printf("  %3d. %s (%d 个函数)\n", i+1, imp.DLL, funcCount)
 
 		if funcCount > 0 && imp.Functions[0] != "(symbols not individually listed)" {
-			const maxDisplay = 10
+			maxDisplay := 10
+			if r.verbose {
+				maxDisplay = funcCount // Show all in verbose mode
+			}
+
 			displayCount := funcCount
 			if displayCount > maxDisplay {
 				displayCount = maxDisplay
@@ -127,7 +164,11 @@ func (r *Reporter) printExports() {
 		return
 	}
 
-	const maxDisplay = 20
+	maxDisplay := 20
+	if r.verbose {
+		maxDisplay = len(r.info.Exports) // Show all in verbose mode
+	}
+
 	displayCount := len(r.info.Exports)
 	if displayCount > maxDisplay {
 		displayCount = maxDisplay
