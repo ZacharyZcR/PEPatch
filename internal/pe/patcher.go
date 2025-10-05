@@ -24,13 +24,13 @@ func NewPatcher(filepath string) (*Patcher, error) {
 
 	peFile, err := pe.NewFile(file)
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("解析PE文件失败: %w", err)
 	}
 
 	stat, err := file.Stat()
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("获取文件信息失败: %w", err)
 	}
 

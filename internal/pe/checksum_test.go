@@ -44,8 +44,8 @@ func TestCalculatePEChecksum(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.Remove(tmpfile.Name())
-			defer tmpfile.Close()
+			defer func() { _ = os.Remove(tmpfile.Name()) }()
+			defer func() { _ = tmpfile.Close() }()
 
 			if _, err := tmpfile.Write(tt.data); err != nil {
 				t.Fatal(err)
@@ -78,8 +78,8 @@ func TestChecksumCarryHandling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
-	defer tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	defer func() { _ = tmpfile.Close() }()
 
 	if _, err := tmpfile.Write(data); err != nil {
 		t.Fatal(err)

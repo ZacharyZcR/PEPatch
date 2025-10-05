@@ -1,15 +1,13 @@
 # golangci-lint configuration
 # Philosophy: Simple, effective, no bullshit.
 
+version: 2
+
 run:
   timeout: 5m
 
 linters:
   enable:
-    # Code style - Go's way, no arguments
-    - gofmt
-    - goimports
-
     # Quality fundamentals
     - govet
     - staticcheck
@@ -30,7 +28,6 @@ linters:
 
     # Best practices
     - revive
-    - gosimple
 
   disable-all: false
 
@@ -73,3 +70,15 @@ issues:
       linters:
         - dupl
         - goconst
+
+    # PE constants use Windows SDK naming (ALL_CAPS) - legitimate exception
+    - path: "internal/pe/(relocation|resource|signature)\\.go"
+      text: "var-naming"
+      linters:
+        - revive
+
+    # Exported PE constants match Windows SDK - no comment needed
+    - path: "internal/pe/signature\\.go"
+      text: "exported const"
+      linters:
+        - revive

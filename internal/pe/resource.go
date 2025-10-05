@@ -28,7 +28,9 @@ type VersionInfo struct {
 	LegalCopyright   string
 }
 
-// Resource types.
+// Resource types (Windows SDK naming convention).
+//
+//nolint:revive // ALL_CAPS matches Windows SDK naming
 const (
 	RT_ICON       = 3
 	RT_STRING     = 6
@@ -43,7 +45,7 @@ type resourceDirectory struct {
 	MajorVersion         uint16
 	MinorVersion         uint16
 	NumberOfNamedEntries uint16
-	NumberOfIdEntries    uint16
+	NumberOfIDEntries    uint16
 }
 
 // IMAGE_RESOURCE_DIRECTORY_ENTRY structure.
@@ -105,7 +107,7 @@ func parseResourceDirectory(f *pe.File, r io.ReaderAt, baseOffset, currentOffset
 		return err
 	}
 
-	totalEntries := int(dir.NumberOfNamedEntries + dir.NumberOfIdEntries)
+	totalEntries := int(dir.NumberOfNamedEntries + dir.NumberOfIDEntries)
 
 	// Read all directory entries
 	for i := 0; i < totalEntries; i++ {
@@ -154,7 +156,7 @@ func parseVersionResource(f *pe.File, r io.ReaderAt, baseOffset, dirOffset int64
 	}
 
 	// Get first entry (usually the only one)
-	if dir.NumberOfNamedEntries+dir.NumberOfIdEntries == 0 {
+	if dir.NumberOfNamedEntries+dir.NumberOfIDEntries == 0 {
 		return nil
 	}
 
@@ -177,7 +179,7 @@ func parseVersionResource(f *pe.File, r io.ReaderAt, baseOffset, dirOffset int64
 		return err
 	}
 
-	if dir.NumberOfNamedEntries+dir.NumberOfIdEntries == 0 {
+	if dir.NumberOfNamedEntries+dir.NumberOfIDEntries == 0 {
 		return nil
 	}
 

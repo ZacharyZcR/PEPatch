@@ -26,13 +26,13 @@ func Open(filepath string) (*Reader, error) {
 	// Open with debug/pe
 	f, err := pe.NewFile(rawFile)
 	if err != nil {
-		rawFile.Close()
+		_ = rawFile.Close()
 		return nil, fmt.Errorf("解析PE文件失败: %w", err)
 	}
 
 	stat, err := rawFile.Stat()
 	if err != nil {
-		rawFile.Close()
+		_ = rawFile.Close()
 		return nil, fmt.Errorf("获取文件信息失败: %w", err)
 	}
 
@@ -47,7 +47,7 @@ func Open(filepath string) (*Reader, error) {
 // Close closes the underlying PE file.
 func (r *Reader) Close() error {
 	if r.rawFile != nil {
-		r.rawFile.Close()
+		_ = r.rawFile.Close()
 	}
 	return r.file.Close()
 }

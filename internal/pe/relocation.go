@@ -20,7 +20,9 @@ type baseRelocationBlock struct {
 	SizeOfBlock    uint32
 }
 
-// Relocation types.
+// Relocation types (Windows SDK naming convention).
+//
+//nolint:revive // ALL_CAPS matches Windows SDK naming
 const (
 	IMAGE_REL_BASED_ABSOLUTE       = 0
 	IMAGE_REL_BASED_HIGH           = 1

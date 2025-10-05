@@ -44,7 +44,7 @@ func main() {
 
 	if err != nil {
 		red := color.New(color.FgRed, color.Bold)
-		red.Fprintf(os.Stderr, "\n错误: %v\n\n", err)
+		_, _ = red.Fprintf(os.Stderr, "\n错误: %v\n\n", err)
 		os.Exit(1)
 	}
 }
@@ -54,7 +54,7 @@ func analyzePE(filepath string) error {
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	analyzer := pe.NewAnalyzer(reader)
 	info, err := analyzer.Analyze()
@@ -86,7 +86,7 @@ func patchPE(filepath string) error {
 	if err != nil {
 		return err
 	}
-	defer patcher.Close()
+	defer func() { _ = patcher.Close() }()
 
 	// Apply patches
 	modified := false
@@ -107,7 +107,7 @@ func patchPE(filepath string) error {
 	// Update checksum
 	if modified && *updateCksum {
 		cyan := color.New(color.FgCyan)
-		cyan.Println("正在更新PE校验和...")
+		_, _ = cyan.Println("正在更新PE校验和...")
 		if err := patcher.UpdateChecksum(); err != nil {
 			return err
 		}
@@ -128,7 +128,7 @@ func createBackupIfNeeded(filepath string) error {
 	}
 
 	green := color.New(color.FgGreen)
-	green.Printf("✓ 已创建备份: %s\n", backupPath)
+	_, _ = green.Printf("✓ 已创建备份: %s\n", backupPath)
 	return nil
 }
 
@@ -139,7 +139,7 @@ func patchSectionPerms(patcher *pe.Patcher) error {
 	}
 
 	cyan := color.New(color.FgCyan)
-	cyan.Printf("正在修改节区 '%s' 的权限...\n", *sectionName)
+	_, _ = cyan.Printf("正在修改节区 '%s' 的权限...\n", *sectionName)
 
 	return patcher.SetSectionPermissions(*sectionName, read, write, execute)
 }
@@ -154,10 +154,10 @@ func patchEntryPointAddr(patcher *pe.Patcher) error {
 
 	// Show current entry point
 	if currentEntry, err := patcher.GetEntryPoint(); err == nil {
-		cyan.Printf("当前入口点: 0x%X\n", currentEntry)
+		_, _ = cyan.Printf("当前入口点: 0x%X\n", currentEntry)
 	}
 
-	cyan.Printf("正在修改入口点为: 0x%X...\n", newEntry)
+	_, _ = cyan.Printf("正在修改入口点为: 0x%X...\n", newEntry)
 	return patcher.PatchEntryPoint(newEntry)
 }
 
@@ -177,10 +177,10 @@ func printPatchSuccess() {
 	green := color.New(color.FgGreen, color.Bold)
 	fmt.Println()
 	if *sectionName != "" && *permissions != "" {
-		green.Printf("✓ 成功修改节区权限: %s -> %s\n", *sectionName, *permissions)
+		_, _ = green.Printf("✓ 成功修改节区权限: %s -> %s\n", *sectionName, *permissions)
 	}
 	if *entryPoint != "" {
-		green.Printf("✓ 成功修改入口点: %s\n", *entryPoint)
+		_, _ = green.Printf("✓ 成功修改入口点: %s\n", *entryPoint)
 	}
 	fmt.Println()
 }
@@ -207,7 +207,7 @@ func copyFile(src, dst string) error {
 
 func printUsage() {
 	cyan := color.New(color.FgCyan, color.Bold)
-	cyan.Println("\nPEPatch - PE文件诊断和修改工具")
+	_, _ = cyan.Println("\nPEPatch - PE文件诊断和修改工具")
 
 	fmt.Println("\n分析模式用法:")
 	fmt.Println("  pepatch [选项] <PE文件路径>")

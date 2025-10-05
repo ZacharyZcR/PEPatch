@@ -37,6 +37,9 @@ type winCertificate struct {
 	// Certificate data follows
 }
 
+// PE signature constants (Windows SDK naming convention).
+//
+//nolint:revive // ALL_CAPS matches Windows SDK naming
 const (
 	WIN_CERT_REVISION_2_0          = 0x0200
 	WIN_CERT_TYPE_PKCS_SIGNED_DATA = 0x0002

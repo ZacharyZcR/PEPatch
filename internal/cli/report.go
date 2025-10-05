@@ -46,14 +46,14 @@ func (r *Reporter) Print() {
 
 func (r *Reporter) printHeader() {
 	cyan := color.New(color.FgCyan, color.Bold)
-	cyan.Println("\n╔════════════════════════════════════════╗")
-	cyan.Println("║          PEPatch 分析报告              ║")
-	cyan.Println("╚════════════════════════════════════════╝")
+	_, _ = cyan.Println("\n╔════════════════════════════════════════╗")
+	_, _ = cyan.Println("║          PEPatch 分析报告              ║")
+	_, _ = cyan.Println("╚════════════════════════════════════════╝")
 }
 
 func (r *Reporter) printBasicInfo() {
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Println("\n【基本信息】")
+	_, _ = yellow.Println("\n【基本信息】")
 
 	fmt.Printf("  %-20s: %s\n", "文件路径", r.info.FilePath)
 	fmt.Printf("  %-20s: %s\n", "文件大小", formatSize(r.info.FileSize))
@@ -67,13 +67,13 @@ func (r *Reporter) printBasicInfo() {
 		fmt.Printf("  %-20s: ", "校验和")
 		if r.info.Checksum.Stored == 0 {
 			gray := color.New(color.FgHiBlack)
-			gray.Print("未设置")
+			_, _ = gray.Print("未设置")
 		} else if r.info.Checksum.Valid {
 			green := color.New(color.FgGreen)
-			green.Printf("✓ 有效 (0x%08X)", r.info.Checksum.Stored)
+			_, _ = green.Printf("✓ 有效 (0x%08X)", r.info.Checksum.Stored)
 		} else {
 			red := color.New(color.FgRed, color.Bold)
-			red.Printf("✗ 无效 (存储: 0x%08X, 计算: 0x%08X)",
+			_, _ = red.Printf("✗ 无效 (存储: 0x%08X, 计算: 0x%08X)",
 				r.info.Checksum.Stored, r.info.Checksum.Computed)
 		}
 		fmt.Println()
@@ -86,17 +86,17 @@ func (r *Reporter) printSignature() {
 	}
 
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Println("\n【数字签名】")
+	_, _ = yellow.Println("\n【数字签名】")
 
 	if !r.info.Signature.IsSigned {
 		gray := color.New(color.FgHiBlack)
-		gray.Println("  未签名")
+		_, _ = gray.Println("  未签名")
 		return
 	}
 
 	if len(r.info.Signature.Certificates) == 0 {
 		red := color.New(color.FgRed)
-		red.Println("  ✗ 已签名但无法解析证书")
+		_, _ = red.Println("  ✗ 已签名但无法解析证书")
 		return
 	}
 
@@ -106,10 +106,10 @@ func (r *Reporter) printSignature() {
 	fmt.Printf("  %-20s: ", "签名者")
 	if cert.IsValid {
 		green := color.New(color.FgGreen)
-		green.Printf("✓ %s\n", cert.Subject)
+		_, _ = green.Printf("✓ %s\n", cert.Subject)
 	} else {
 		red := color.New(color.FgRed)
-		red.Printf("✗ %s (已过期)\n", cert.Subject)
+		_, _ = red.Printf("✗ %s (已过期)\n", cert.Subject)
 	}
 
 	fmt.Printf("  %-20s: %s\n", "颁发者", cert.Issuer)
@@ -132,7 +132,7 @@ func (r *Reporter) printSignature() {
 				statusColor = color.New(color.FgRed)
 			}
 			fmt.Printf("    %d. ", i+1)
-			statusColor.Print(status + " ")
+			_, _ = statusColor.Print(status + " ")
 			fmt.Println(c.Subject)
 		}
 	}
@@ -151,7 +151,7 @@ func (r *Reporter) printResources() {
 	}
 
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Println("\n【资源信息】")
+	_, _ = yellow.Println("\n【资源信息】")
 
 	r.printVersionInfo(res.VersionInfo)
 	r.printOtherResources(res)
@@ -208,25 +208,25 @@ func (r *Reporter) printTLS() {
 	}
 
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Println("\n【TLS 回调】")
+	_, _ = yellow.Println("\n【TLS 回调】")
 
 	tls := r.info.TLS
 
 	if len(tls.Callbacks) == 0 {
 		gray := color.New(color.FgHiBlack)
-		gray.Println("  有 TLS 目录但无回调函数")
+		_, _ = gray.Println("  有 TLS 目录但无回调函数")
 		return
 	}
 
 	// TLS callbacks are suspicious - often used by malware for anti-debugging
 	red := color.New(color.FgRed, color.Bold)
-	red.Printf("  ⚠ 发现 %d 个 TLS 回调函数 (可疑)\n", len(tls.Callbacks))
+	_, _ = red.Printf("  ⚠ 发现 %d 个 TLS 回调函数 (可疑)\n", len(tls.Callbacks))
 
 	fmt.Println("  TLS 回调函数地址:")
 	for i, callback := range tls.Callbacks {
 		if i >= 10 && !r.verbose {
 			gray := color.New(color.FgHiBlack)
-			gray.Printf("  ... (还有 %d 个回调)\n", len(tls.Callbacks)-10)
+			_, _ = gray.Printf("  ... (还有 %d 个回调)\n", len(tls.Callbacks)-10)
 			break
 		}
 		fmt.Printf("    %2d. 0x%016X\n", i+1, callback)
@@ -252,17 +252,17 @@ func (r *Reporter) printRelocations() {
 	}
 
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Println("\n【重定位表】")
+	_, _ = yellow.Println("\n【重定位表】")
 
 	green := color.New(color.FgGreen)
-	green.Printf("  ✓ 支持 ASLR (地址空间布局随机化)\n")
+	_, _ = green.Printf("  ✓ 支持 ASLR (地址空间布局随机化)\n")
 
 	fmt.Printf("  %-20s: %d\n", "重定位块数量", reloc.BlockCount)
 	fmt.Printf("  %-20s: %d\n", "重定位项总数", reloc.TotalEntries)
 
 	if reloc.TotalEntries == 0 {
 		gray := color.New(color.FgHiBlack)
-		gray.Println("  (有重定位表但无重定位项)")
+		_, _ = gray.Println("  (有重定位表但无重定位项)")
 	}
 }
 
@@ -282,9 +282,9 @@ func (r *Reporter) printSections() {
 
 	yellow := color.New(color.FgYellow, color.Bold)
 	if r.suspiciousOnly {
-		yellow.Printf("\n【可疑节区】(共 %d 个)\n", len(sections))
+		_, _ = yellow.Printf("\n【可疑节区】(共 %d 个)\n", len(sections))
 	} else {
-		yellow.Printf("\n【节区信息】(共 %d 个)\n", len(sections))
+		_, _ = yellow.Printf("\n【节区信息】(共 %d 个)\n", len(sections))
 	}
 
 	if len(sections) == 0 {
@@ -326,9 +326,9 @@ func (r *Reporter) printSections() {
 			formatSize(int64(section.VirtualSize)),
 			formatSize(int64(section.Size)),
 		)
-		permColor.Printf("%-8s", section.Permissions)
+		_, _ = permColor.Printf("%-8s", section.Permissions)
 		fmt.Print(" ")
-		entropyColor.Printf("%-10.6f", section.Entropy)
+		_, _ = entropyColor.Printf("%-10.6f", section.Entropy)
 		fmt.Printf(" 0x%08X\n", section.Characteristics)
 	}
 	fmt.Println(strings.Repeat("-", 110))
@@ -336,7 +336,7 @@ func (r *Reporter) printSections() {
 
 func (r *Reporter) printImports() {
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Printf("\n【导入表】(共 %d 个DLL)\n", len(r.info.Imports))
+	_, _ = yellow.Printf("\n【导入表】(共 %d 个DLL)\n", len(r.info.Imports))
 
 	if len(r.info.Imports) == 0 {
 		fmt.Println("  未发现导入")
@@ -346,7 +346,7 @@ func (r *Reporter) printImports() {
 	for i, imp := range r.info.Imports {
 		green := color.New(color.FgGreen)
 		funcCount := len(imp.Functions)
-		green.Printf("  %3d. %s (%d 个函数)\n", i+1, imp.DLL, funcCount)
+		_, _ = green.Printf("  %3d. %s (%d 个函数)\n", i+1, imp.DLL, funcCount)
 
 		if funcCount > 0 && imp.Functions[0] != "(symbols not individually listed)" {
 			maxDisplay := 10
@@ -365,7 +365,7 @@ func (r *Reporter) printImports() {
 
 			if funcCount > maxDisplay {
 				gray := color.New(color.FgHiBlack)
-				gray.Printf("       ... (还有 %d 个函数)\n", funcCount-maxDisplay)
+				_, _ = gray.Printf("       ... (还有 %d 个函数)\n", funcCount-maxDisplay)
 			}
 		}
 	}
@@ -374,7 +374,7 @@ func (r *Reporter) printImports() {
 
 func (r *Reporter) printExports() {
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Printf("\n【导出表】(共 %d 个函数)\n", len(r.info.Exports))
+	_, _ = yellow.Printf("\n【导出表】(共 %d 个函数)\n", len(r.info.Exports))
 
 	if len(r.info.Exports) == 0 {
 		fmt.Println("  未发现导出")
@@ -393,12 +393,12 @@ func (r *Reporter) printExports() {
 
 	for i := 0; i < displayCount; i++ {
 		green := color.New(color.FgGreen)
-		green.Printf("  %3d. %s\n", i+1, r.info.Exports[i])
+		_, _ = green.Printf("  %3d. %s\n", i+1, r.info.Exports[i])
 	}
 
 	if len(r.info.Exports) > maxDisplay {
 		gray := color.New(color.FgHiBlack)
-		gray.Printf("  ... (还有 %d 个函数)\n", len(r.info.Exports)-maxDisplay)
+		_, _ = gray.Printf("  ... (还有 %d 个函数)\n", len(r.info.Exports)-maxDisplay)
 	}
 	fmt.Println()
 }
