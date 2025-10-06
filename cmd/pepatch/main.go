@@ -38,6 +38,7 @@ var (
 	exportRVA       = flag.String("export-rva", "", "导出函数RVA地址（十六进制，用于add-export和modify-export）")
 	removeSig       = flag.Bool("remove-signature", false, "移除数字签名")
 	truncateSig     = flag.Bool("truncate-cert", true, "移除签名时截断证书数据（节省空间）")
+	addTLSCallback  = flag.String("add-tls-callback", "", "添加TLS回调函数（RVA地址，十六进制）")
 	updateCksum     = flag.Bool("update-checksum", true, "修改后更新校验和")
 	createBackup    = flag.Bool("backup", true, "修改前创建备份文件")
 )
@@ -110,8 +111,8 @@ func analyzePE(filepath string) error {
 
 func patchPE(filepath string) error {
 	if *sectionName == "" && *entryPoint == "" && *injectSection == "" && *addImport == "" &&
-		*addExport == "" && *modifyExport == "" && *removeExport == "" && !*removeSig {
-		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, -inject-section, -add-import, 导出操作, 或 -remove-signature)")
+		*addExport == "" && *modifyExport == "" && *removeExport == "" && !*removeSig && *addTLSCallback == "" {
+		return fmt.Errorf("必须指定至少一个修改操作")
 	}
 
 	if err := createBackupIfNeeded(filepath); err != nil {
@@ -186,6 +187,13 @@ func applyPatches(patcher *pe.Patcher) error {
 
 	if *removeSig {
 		if err := removeSignature(patcher); err != nil {
+			return err
+		}
+		modified = true
+	}
+
+	if *addTLSCallback != "" {
+		if err := addTLSCallbackFunc(patcher); err != nil {
 			return err
 		}
 		modified = true
@@ -406,6 +414,36 @@ func removeSignature(patcher *pe.Patcher) error {
 	return nil
 }
 
+func addTLSCallbackFunc(patcher *pe.Patcher) error {
+	cyan := color.New(color.FgCyan)
+	yellow := color.New(color.FgYellow)
+
+	// Parse callback RVA
+	callbackRVA, err := parseHexAddress(*addTLSCallback)
+	if err != nil {
+		return fmt.Errorf("TLS回调RVA地址格式错误: %w", err)
+	}
+
+	// Check if TLS directory exists
+	modifier := pe.NewTLSModifier(patcher)
+	hasTLS, _, _ := modifier.HasTLS()
+
+	if !hasTLS {
+		_, _ = yellow.Println("⚠️  文件没有TLS目录，无法添加TLS回调")
+		_, _ = yellow.Println("提示：只有少数PE文件使用TLS，大多数程序不需要TLS回调")
+		return fmt.Errorf("文件没有TLS目录")
+	}
+
+	_, _ = cyan.Printf("正在添加TLS回调 (RVA: 0x%X)...\n", callbackRVA)
+
+	if err := modifier.AddTLSCallback(callbackRVA); err != nil {
+		return err
+	}
+
+	_, _ = cyan.Printf("✓ 已成功添加TLS回调\n")
+	return nil
+}
+
 func printPatchSuccess() {
 	green := color.New(color.FgGreen, color.Bold)
 	fmt.Println()
@@ -432,6 +470,9 @@ func printPatchSuccess() {
 	}
 	if *removeSig {
 		_, _ = green.Printf("✓ 成功移除数字签名\n")
+	}
+	if *addTLSCallback != "" {
+		_, _ = green.Printf("✓ 成功添加TLS回调: %s\n", *addTLSCallback)
 	}
 	fmt.Println()
 }
@@ -605,6 +646,7 @@ func printUsage() {
 	fmt.Println("  -export-rva <地址>    导出函数RVA地址（十六进制，例如: 0x1000）")
 	fmt.Println("  -remove-signature     移除数字签名")
 	fmt.Println("  -truncate-cert        移除签名时截断证书数据（默认: true，节省空间）")
+	fmt.Println("  -add-tls-callback <RVA> 添加TLS回调函数（RVA地址，十六进制）")
 	fmt.Println("  -backup               修改前创建备份（默认: true）")
 	fmt.Println("  -update-checksum      修改后更新校验和（默认: true）")
 
@@ -640,6 +682,8 @@ func printUsage() {
 	fmt.Println("\n  # 数字签名移除")
 	fmt.Println("  pepatch -patch -remove-signature program.exe")
 	fmt.Println("  pepatch -patch -remove-signature -truncate-cert=false program.exe  # 保留证书数据")
+	fmt.Println("\n  # TLS回调注入")
+	fmt.Println("  pepatch -patch -add-tls-callback 0x1000 program.exe")
 	fmt.Println("\n  # 组合修改")
 	fmt.Println("  pepatch -patch -section .text -perms R-X -entry 0x1000 file.exe")
 	fmt.Println("  pepatch -patch -entry 0x5000 -backup=false file.exe")
