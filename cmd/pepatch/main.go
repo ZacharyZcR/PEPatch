@@ -19,12 +19,15 @@ var (
 	minCaveSize    = flag.Uint("min-cave-size", 32, "Code Cave最小大小（字节）")
 
 	// Patch flags.
-	patchMode    = flag.Bool("patch", false, "修改模式：修改PE文件")
-	sectionName  = flag.String("section", "", "要修改的节区名称")
-	permissions  = flag.String("perms", "", "新的权限 (例如: R-X, RW-, RWX)")
-	entryPoint   = flag.String("entry", "", "新的入口点地址 (十六进制，例如: 0x1000)")
-	updateCksum  = flag.Bool("update-checksum", true, "修改后更新校验和")
-	createBackup = flag.Bool("backup", true, "修改前创建备份文件")
+	patchMode      = flag.Bool("patch", false, "修改模式：修改PE文件")
+	sectionName    = flag.String("section", "", "要修改的节区名称")
+	permissions    = flag.String("perms", "", "新的权限 (例如: R-X, RW-, RWX)")
+	entryPoint     = flag.String("entry", "", "新的入口点地址 (十六进制，例如: 0x1000)")
+	injectSection  = flag.String("inject-section", "", "注入新节区的名称 (最大8字符)")
+	sectionSize    = flag.Uint("section-size", 4096, "新节区大小（字节）")
+	sectionPerms   = flag.String("section-perms", "RWX", "新节区权限 (R-X, RW-, RWX)")
+	updateCksum    = flag.Bool("update-checksum", true, "修改后更新校验和")
+	createBackup   = flag.Bool("backup", true, "修改前创建备份文件")
 )
 
 func main() {
@@ -81,8 +84,8 @@ func analyzePE(filepath string) error {
 
 func patchPE(filepath string) error {
 	// Validate parameters
-	if *sectionName == "" && *entryPoint == "" {
-		return fmt.Errorf("必须指定至少一个修改操作 (-section 或 -entry)")
+	if *sectionName == "" && *entryPoint == "" && *injectSection == "" {
+		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, 或 -inject-section)")
 	}
 
 	// Create backup
@@ -108,6 +111,13 @@ func patchPE(filepath string) error {
 
 	if *entryPoint != "" {
 		if err := patchEntryPointAddr(patcher); err != nil {
+			return err
+		}
+		modified = true
+	}
+
+	if *injectSection != "" {
+		if err := injectNewSection(patcher); err != nil {
 			return err
 		}
 		modified = true
@@ -182,6 +192,45 @@ func parseHexAddress(addr string) (uint32, error) {
 	return result, nil
 }
 
+func injectNewSection(patcher *pe.Patcher) error {
+	// Parse permissions.
+	read, write, execute, err := parsePermissions(*sectionPerms)
+	if err != nil {
+		return err
+	}
+
+	// Calculate characteristics.
+	var characteristics uint32
+	if read {
+		characteristics |= 0x40000000 // IMAGE_SCN_MEM_READ
+	}
+	if write {
+		characteristics |= 0x80000000 // IMAGE_SCN_MEM_WRITE
+	}
+	if execute {
+		characteristics |= 0x20000000 // IMAGE_SCN_MEM_EXECUTE
+		characteristics |= 0x00000020 // IMAGE_SCN_CNT_CODE
+	} else {
+		characteristics |= 0x00000040 // IMAGE_SCN_CNT_INITIALIZED_DATA
+	}
+
+	cyan := color.New(color.FgCyan)
+	_, _ = cyan.Printf("正在注入新节区 '%s' (%d 字节, 权限: %s)...\n", *injectSection, *sectionSize, *sectionPerms)
+
+	// Create empty data.
+	data := make([]byte, *sectionSize)
+
+	// Extend file size first.
+	lastSection := patcher.File().Sections[len(patcher.File().Sections)-1]
+	newFileSize := int64(lastSection.Offset + lastSection.Size + uint32(*sectionSize) + 4096)
+	if err := patcher.ExtendFileSize(newFileSize); err != nil {
+		return err
+	}
+
+	// Inject section.
+	return patcher.InjectSection(*injectSection, data, characteristics)
+}
+
 func printPatchSuccess() {
 	green := color.New(color.FgGreen, color.Bold)
 	fmt.Println()
@@ -190,6 +239,9 @@ func printPatchSuccess() {
 	}
 	if *entryPoint != "" {
 		_, _ = green.Printf("✓ 成功修改入口点: %s\n", *entryPoint)
+	}
+	if *injectSection != "" {
+		_, _ = green.Printf("✓ 成功注入新节区: %s (%d 字节, 权限: %s)\n", *injectSection, *sectionSize, *sectionPerms)
 	}
 	fmt.Println()
 }
@@ -274,13 +326,16 @@ func printUsage() {
 	fmt.Println("\n修改模式用法:")
 	fmt.Println("  pepatch -patch [选项] <PE文件路径>")
 	fmt.Println("\n修改选项:")
-	fmt.Println("  -patch              启用修改模式")
-	fmt.Println("  -section <名称>     要修改的节区名称（例如: .text, .data）")
-	fmt.Println("  -perms <RWX>        新的权限，3个字符：R(读) W(写) X(执行)，用'-'表示无")
-	fmt.Println("                      例如: R-X（只读可执行）, RW-（读写）, --X（只执行）")
-	fmt.Println("  -entry <地址>       新的入口点地址（十六进制，例如: 0x1000）")
-	fmt.Println("  -backup             修改前创建备份（默认: true）")
-	fmt.Println("  -update-checksum    修改后更新校验和（默认: true）")
+	fmt.Println("  -patch                启用修改模式")
+	fmt.Println("  -section <名称>       要修改的节区名称（例如: .text, .data）")
+	fmt.Println("  -perms <RWX>          新的权限，3个字符：R(读) W(写) X(执行)，用'-'表示无")
+	fmt.Println("                        例如: R-X（只读可执行）, RW-（读写）, --X（只执行）")
+	fmt.Println("  -entry <地址>         新的入口点地址（十六进制，例如: 0x1000）")
+	fmt.Println("  -inject-section <名>  注入新节区的名称（最大8字符）")
+	fmt.Println("  -section-size <大小>  新节区大小（字节，默认: 4096）")
+	fmt.Println("  -section-perms <RWX>  新节区权限（默认: RWX）")
+	fmt.Println("  -backup               修改前创建备份（默认: true）")
+	fmt.Println("  -update-checksum      修改后更新校验和（默认: true）")
 
 	fmt.Println("\n示例:")
 	fmt.Println("  # 分析文件")
@@ -296,6 +351,9 @@ func printUsage() {
 	fmt.Println("\n  # 修改入口点")
 	fmt.Println("  pepatch -patch -entry 0x2000 program.exe")
 	fmt.Println("  pepatch -patch -entry 1A40 program.exe")
+	fmt.Println("\n  # 注入新节区")
+	fmt.Println("  pepatch -patch -inject-section .newsec program.exe")
+	fmt.Println("  pepatch -patch -inject-section .code -section-size 8192 -section-perms R-X program.exe")
 	fmt.Println("\n  # 组合修改")
 	fmt.Println("  pepatch -patch -section .text -perms R-X -entry 0x1000 file.exe")
 	fmt.Println("  pepatch -patch -entry 0x5000 -backup=false file.exe")

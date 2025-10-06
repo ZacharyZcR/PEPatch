@@ -231,3 +231,8 @@ func (p *Patcher) GetEntryPoint() (uint32, error) {
 	}
 	return 0, fmt.Errorf("无法读取入口点")
 }
+
+// File returns the underlying PE file structure.
+func (p *Patcher) File() *pe.File {
+	return p.peFile
+}
