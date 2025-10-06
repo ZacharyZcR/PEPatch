@@ -83,25 +83,31 @@ func analyzePE(filepath string) error {
 }
 
 func patchPE(filepath string) error {
-	// Validate parameters
 	if *sectionName == "" && *entryPoint == "" && *injectSection == "" {
 		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, 或 -inject-section)")
 	}
 
-	// Create backup
 	if err := createBackupIfNeeded(filepath); err != nil {
 		return err
 	}
 
-	// Open patcher
 	patcher, err := pe.NewPatcher(filepath)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = patcher.Close() }()
 
-	// Apply patches
+	if err := applyPatches(patcher); err != nil {
+		return err
+	}
+
+	printPatchSuccess()
+	return nil
+}
+
+func applyPatches(patcher *pe.Patcher) error {
 	modified := false
+
 	if *sectionName != "" && *permissions != "" {
 		if err := patchSectionPerms(patcher); err != nil {
 			return err
@@ -123,17 +129,16 @@ func patchPE(filepath string) error {
 		modified = true
 	}
 
-	// Update checksum
 	if modified && *updateCksum {
-		cyan := color.New(color.FgCyan)
-		_, _ = cyan.Println("正在更新PE校验和...")
-		if err := patcher.UpdateChecksum(); err != nil {
-			return err
-		}
+		return updateChecksumWithMessage(patcher)
 	}
-
-	printPatchSuccess()
 	return nil
+}
+
+func updateChecksumWithMessage(patcher *pe.Patcher) error {
+	cyan := color.New(color.FgCyan)
+	_, _ = cyan.Println("正在更新PE校验和...")
+	return patcher.UpdateChecksum()
 }
 
 func createBackupIfNeeded(filepath string) error {
