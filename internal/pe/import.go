@@ -615,13 +615,6 @@ func (im *ImportModifier) getPtrSize(is64bit bool) uint32 {
 	return 4
 }
 
-func (im *ImportModifier) writeThunkArray(data []byte, baseOffset uint32, thunks []uint64, is64bit bool, ptrSize uint32) {
-	for j, thunk := range thunks {
-		pos := baseOffset + uint32(j)*ptrSize
-		im.writeThunkEntry(data, pos, thunk, is64bit)
-	}
-}
-
 func (im *ImportModifier) writeThunkEntry(data []byte, pos uint32, value uint64, is64bit bool) {
 	if is64bit {
 		binary.LittleEndian.PutUint64(data[pos:], value)
