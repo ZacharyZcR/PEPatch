@@ -20,6 +20,7 @@
 - **节区注入**：添加自定义节区
 - **导入表注入**：添加新的DLL导入，完美保留原始IAT
 - **导出表修改**：添加、修改、删除DLL导出函数
+- **数字签名移除**：移除PE文件的数字签名（可选截断）
 
 ### 🎯 技术亮点
 - ✅ **保留原始IAT**：导入注入技术完全保留原始Import Address Table位置
@@ -108,6 +109,10 @@ pepatch -patch -add-import user32.dll:MessageBoxA,MessageBoxW program.exe
 pepatch -patch -add-export MyFunction -export-rva 0x1000 mydll.dll       # 添加导出
 pepatch -patch -modify-export OldFunc -export-rva 0x2000 mydll.dll      # 修改导出
 pepatch -patch -remove-export UnusedFunc mydll.dll                       # 删除导出
+
+# 数字签名移除
+pepatch -patch -remove-signature program.exe                             # 移除签名（截断文件）
+pepatch -patch -remove-signature -truncate-cert=false program.exe       # 移除签名（保留数据）
 ```
 
 ## 📖 文档

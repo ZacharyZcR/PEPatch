@@ -244,6 +244,59 @@ pepatch -patch -remove-export OldFunction mydll.dll
 - 修改导出会使数字签名失效
 - 建议在隔离环境中测试
 
+### 数字签名移除
+
+**核心功能**：移除PE文件的数字签名，可选择是否截断证书数据。
+
+```bash
+# 移除签名并截断文件（默认，节省空间）
+pepatch -patch -remove-signature program.exe
+
+# 移除签名但保留证书数据（保持文件大小）
+pepatch -patch -remove-signature -truncate-cert=false program.exe
+```
+
+**使用场景**：
+- **修改后失效签名**：修改PE文件后签名自动失效，不如主动移除
+- **减小文件体积**：证书数据可能很大（几KB到几百KB）
+- **绕过签名检查**：某些程序会拒绝运行签名失效的文件
+- **逆向工程准备**：移除签名便于后续修改
+
+**技术特性**：
+- ✅ 清除Security Directory（Data Directory[4]）
+- ✅ 可选截断文件移除证书数据
+- ✅ 支持PE32和PE32+
+- ✅ 自动检测签名存在性
+
+**空间节省示例**：
+```
+原始文件（带签名）: 956 KB
+移除签名（截断）:   800 KB  ← 节省156KB
+移除签名（不截断）: 956 KB  ← 仅清除目录条目
+```
+
+**注意事项**：
+- 移除签名后文件将显示为"未签名"
+- 某些安全软件可能警告未签名文件
+- Windows SmartScreen可能阻止执行
+- 系统文件（如驱动）移除签名后无法加载
+- **不要在生产系统文件上使用**
+
+**典型工作流**：
+```bash
+# 1. 分析文件查看签名状态
+pepatch program.exe  # 查看【数字签名】部分
+
+# 2. 修改文件（签名会失效）
+pepatch -patch -add-import user32.dll:MessageBoxA program.exe
+
+# 3. 移除失效的签名
+pepatch -patch -remove-signature program.exe
+
+# 4. 验证签名已移除
+pepatch program.exe  # 应显示"未签名"
+```
+
 ### 组合修改
 
 ```bash
@@ -522,6 +575,8 @@ echo "部署包已准备就绪: $DIST_DIR"
 | `-modify-export` | 修改导出 | `-modify-export Func -export-rva 0x2000` |
 | `-remove-export` | 删除导出 | `-remove-export OldFunc` |
 | `-export-rva` | 导出函数RVA | `-export-rva 0x1000` |
+| `-remove-signature` | 移除数字签名 | `-remove-signature` |
+| `-truncate-cert` | 截断证书数据 | `-truncate-cert=false` |
 | `-backup` | 创建备份 | `-backup=false` |
 | `-update-checksum` | 更新校验和 | `-update-checksum=false` |
 
