@@ -223,10 +223,20 @@ func analyzePEFile(filepath string) (string, error) {
 		return "", err
 	}
 
-	// Format output
 	var output strings.Builder
+	formatBasicInfo(&output, info)
+	formatSignature(&output, info)
+	formatResources(&output, info)
+	formatTLS(&output, info)
+	formatRelocations(&output, info)
+	formatSections(&output, info)
+	formatImports(&output, info)
+	formatExports(&output, info)
 
-	// Basic Info
+	return output.String(), nil
+}
+
+func formatBasicInfo(output *strings.Builder, info *pe.Info) {
 	output.WriteString("========== 基本信息 ==========\n")
 	output.WriteString(fmt.Sprintf("文件路径: %s\n", info.FilePath))
 	output.WriteString(fmt.Sprintf("文件大小: %d 字节\n", info.FileSize))
@@ -244,71 +254,85 @@ func analyzePEFile(filepath string) (string, error) {
 				info.Checksum.Stored, info.Checksum.Computed))
 		}
 	}
+}
 
-	// Digital Signature
-	if info.Signature != nil {
-		output.WriteString("\n========== 数字签名 ==========\n")
-		if info.Signature.IsSigned {
-			if len(info.Signature.Certificates) > 0 {
-				cert := info.Signature.Certificates[0]
-				if cert.IsValid {
-					output.WriteString(fmt.Sprintf("签名者: ✓ %s\n", cert.Subject))
-				} else {
-					output.WriteString(fmt.Sprintf("签名者: ✗ %s (已过期)\n", cert.Subject))
-				}
-				output.WriteString(fmt.Sprintf("颁发者: %s\n", cert.Issuer))
-				output.WriteString(fmt.Sprintf("有效期: %s - %s\n",
-					cert.NotBefore.Format("2006-01-02"), cert.NotAfter.Format("2006-01-02")))
-			}
+func formatSignature(output *strings.Builder, info *pe.Info) {
+	if info.Signature == nil {
+		return
+	}
+
+	output.WriteString("\n========== 数字签名 ==========\n")
+	if !info.Signature.IsSigned {
+		output.WriteString("未签名\n")
+		return
+	}
+
+	if len(info.Signature.Certificates) > 0 {
+		cert := info.Signature.Certificates[0]
+		if cert.IsValid {
+			output.WriteString(fmt.Sprintf("签名者: ✓ %s\n", cert.Subject))
 		} else {
-			output.WriteString("未签名\n")
+			output.WriteString(fmt.Sprintf("签名者: ✗ %s (已过期)\n", cert.Subject))
 		}
+		output.WriteString(fmt.Sprintf("颁发者: %s\n", cert.Issuer))
+		output.WriteString(fmt.Sprintf("有效期: %s - %s\n",
+			cert.NotBefore.Format("2006-01-02"), cert.NotAfter.Format("2006-01-02")))
+	}
+}
+
+func formatResources(output *strings.Builder, info *pe.Info) {
+	if info.Resources == nil || (info.Resources.VersionInfo == nil && !info.Resources.HasIcon) {
+		return
 	}
 
-	// Resources
-	if info.Resources != nil && (info.Resources.VersionInfo != nil || info.Resources.HasIcon) {
-		output.WriteString("\n========== 资源信息 ==========\n")
-		if v := info.Resources.VersionInfo; v != nil {
-			if v.FileDescription != "" {
-				output.WriteString(fmt.Sprintf("文件描述: %s\n", v.FileDescription))
-			}
-			if v.FileVersion != "" {
-				output.WriteString(fmt.Sprintf("文件版本: %s\n", v.FileVersion))
-			}
-			if v.ProductName != "" {
-				output.WriteString(fmt.Sprintf("产品名称: %s\n", v.ProductName))
-			}
-			if v.CompanyName != "" {
-				output.WriteString(fmt.Sprintf("公司名称: %s\n", v.CompanyName))
-			}
+	output.WriteString("\n========== 资源信息 ==========\n")
+	if v := info.Resources.VersionInfo; v != nil {
+		if v.FileDescription != "" {
+			output.WriteString(fmt.Sprintf("文件描述: %s\n", v.FileDescription))
 		}
-		if info.Resources.HasIcon {
-			output.WriteString(fmt.Sprintf("图标: 是 (%d 个)\n", info.Resources.IconCount))
+		if v.FileVersion != "" {
+			output.WriteString(fmt.Sprintf("文件版本: %s\n", v.FileVersion))
+		}
+		if v.ProductName != "" {
+			output.WriteString(fmt.Sprintf("产品名称: %s\n", v.ProductName))
+		}
+		if v.CompanyName != "" {
+			output.WriteString(fmt.Sprintf("公司名称: %s\n", v.CompanyName))
 		}
 	}
+	if info.Resources.HasIcon {
+		output.WriteString(fmt.Sprintf("图标: 是 (%d 个)\n", info.Resources.IconCount))
+	}
+}
 
-	// TLS Callbacks
-	if info.TLS != nil && info.TLS.HasTLS && len(info.TLS.Callbacks) > 0 {
-		output.WriteString("\n========== TLS 回调 ==========\n")
-		output.WriteString(fmt.Sprintf("⚠ 发现 %d 个 TLS 回调函数 (可疑)\n", len(info.TLS.Callbacks)))
-		for i, callback := range info.TLS.Callbacks {
-			if i >= 5 {
-				output.WriteString(fmt.Sprintf("  ... (还有 %d 个回调)\n", len(info.TLS.Callbacks)-5))
-				break
-			}
-			output.WriteString(fmt.Sprintf("  %d. 0x%016X\n", i+1, callback))
+func formatTLS(output *strings.Builder, info *pe.Info) {
+	if info.TLS == nil || !info.TLS.HasTLS || len(info.TLS.Callbacks) == 0 {
+		return
+	}
+
+	output.WriteString("\n========== TLS 回调 ==========\n")
+	output.WriteString(fmt.Sprintf("⚠ 发现 %d 个 TLS 回调函数 (可疑)\n", len(info.TLS.Callbacks)))
+	for i, callback := range info.TLS.Callbacks {
+		if i >= 5 {
+			output.WriteString(fmt.Sprintf("  ... (还有 %d 个回调)\n", len(info.TLS.Callbacks)-5))
+			break
 		}
+		output.WriteString(fmt.Sprintf("  %d. 0x%016X\n", i+1, callback))
+	}
+}
+
+func formatRelocations(output *strings.Builder, info *pe.Info) {
+	if info.Relocations == nil || !info.Relocations.HasRelocations {
+		return
 	}
 
-	// Relocations
-	if info.Relocations != nil && info.Relocations.HasRelocations {
-		output.WriteString("\n========== 重定位表 ==========\n")
-		output.WriteString("✓ 支持 ASLR (地址空间布局随机化)\n")
-		output.WriteString(fmt.Sprintf("重定位块数量: %d\n", info.Relocations.BlockCount))
-		output.WriteString(fmt.Sprintf("重定位项总数: %d\n", info.Relocations.TotalEntries))
-	}
+	output.WriteString("\n========== 重定位表 ==========\n")
+	output.WriteString("✓ 支持 ASLR (地址空间布局随机化)\n")
+	output.WriteString(fmt.Sprintf("重定位块数量: %d\n", info.Relocations.BlockCount))
+	output.WriteString(fmt.Sprintf("重定位项总数: %d\n", info.Relocations.TotalEntries))
+}
 
-	// Sections
+func formatSections(output *strings.Builder, info *pe.Info) {
 	output.WriteString(fmt.Sprintf("\n========== 节区信息 (%d 个) ==========\n", len(info.Sections)))
 	for _, section := range info.Sections {
 		output.WriteString(fmt.Sprintf("  %s:\n", section.Name))
@@ -317,8 +341,9 @@ func analyzePEFile(filepath string) (string, error) {
 		output.WriteString(fmt.Sprintf("    权限: %s\n", section.Permissions))
 		output.WriteString(fmt.Sprintf("    熵值: %.2f\n", section.Entropy))
 	}
+}
 
-	// Imports
+func formatImports(output *strings.Builder, info *pe.Info) {
 	output.WriteString(fmt.Sprintf("\n========== 导入表 (%d 个DLL) ==========\n", len(info.Imports)))
 	for i, imp := range info.Imports {
 		if i >= 20 {
@@ -327,7 +352,6 @@ func analyzePEFile(filepath string) (string, error) {
 		}
 		output.WriteString(fmt.Sprintf("%d. %s (%d 个函数)\n", i+1, imp.DLL, len(imp.Functions)))
 
-		// Show first 5 functions
 		maxFuncs := 5
 		if len(imp.Functions) > 0 && imp.Functions[0] != "(symbols not individually listed)" {
 			for j, fn := range imp.Functions {
@@ -339,20 +363,21 @@ func analyzePEFile(filepath string) (string, error) {
 			}
 		}
 	}
+}
 
-	// Exports
-	if len(info.Exports) > 0 {
-		output.WriteString(fmt.Sprintf("\n========== 导出表 (%d 个函数) ==========\n", len(info.Exports)))
-		for i, exp := range info.Exports {
-			if i >= 20 {
-				output.WriteString(fmt.Sprintf("  ... (还有 %d 个函数)\n", len(info.Exports)-20))
-				break
-			}
-			output.WriteString(fmt.Sprintf("%d. %s\n", i+1, exp))
-		}
+func formatExports(output *strings.Builder, info *pe.Info) {
+	if len(info.Exports) == 0 {
+		return
 	}
 
-	return output.String(), nil
+	output.WriteString(fmt.Sprintf("\n========== 导出表 (%d 个函数) ==========\n", len(info.Exports)))
+	for i, exp := range info.Exports {
+		if i >= 20 {
+			output.WriteString(fmt.Sprintf("  ... (还有 %d 个函数)\n", len(info.Exports)-20))
+			break
+		}
+		output.WriteString(fmt.Sprintf("%d. %s\n", i+1, exp))
+	}
 }
 
 func patchSection(filepath, sectionName, perms string) error {
