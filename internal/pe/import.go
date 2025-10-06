@@ -81,12 +81,13 @@ func (im *ImportModifier) AddImport(dllName string, functions []string) error {
 	newSection := sections[len(sections)-1]
 
 	// Build complete import data preserving all existing imports.
-	if err := im.buildCompleteImportData(newSection, existingData, dllName, functions); err != nil {
+	iatInfo, err := im.buildCompleteImportData(newSection, existingData, dllName, functions)
+	if err != nil {
 		return err
 	}
 
-	// Update Import Directory in Optional Header.
-	if err := im.updateImportDirectory(newSection.VirtualAddress, dataSize); err != nil {
+	// Update Import Directory and IAT Directory in Optional Header.
+	if err := im.updateImportDirectory(newSection.VirtualAddress, dataSize, iatInfo); err != nil {
 		return err
 	}
 
@@ -368,7 +369,16 @@ func (im *ImportModifier) calculateCompleteImportDataSize(existing []ExistingImp
 	}
 	size += uint32(len(newDLL)) + 1
 
-	// Function names (only for new import - existing function names remain in original location).
+	// Function names for existing imports.
+	for _, imp := range existing {
+		for _, fn := range imp.Functions {
+			if !fn.IsByOrdinal {
+				size += 2 + uint32(len(fn.Name)) + 1 // hint + name + null
+			}
+		}
+	}
+
+	// Function names for new import.
 	for _, fn := range newFunctions {
 		size += 2 + uint32(len(fn)) + 1
 	}
@@ -381,18 +391,25 @@ func (im *ImportModifier) calculateCompleteImportDataSize(existing []ExistingImp
 
 // importDataLayout holds offset information for import table layout.
 type importDataLayout struct {
-	descriptorsOffset  uint32
-	intOffsets         []uint32
-	iatOffsets         []uint32
-	dllNameOffsets     []uint32
-	newINTOffset       uint32
-	newIATOffset       uint32
-	newDLLNameOffset   uint32
-	newFuncNameOffsets []uint32
+	descriptorsOffset   uint32
+	intOffsets          []uint32
+	iatOffsets          []uint32
+	dllNameOffsets      []uint32
+	funcNameOffsets     [][]uint32 // [dllIndex][funcIndex]
+	newINTOffset        uint32
+	newIATOffset        uint32
+	newDLLNameOffset    uint32
+	newFuncNameOffsets  []uint32
+}
+
+// IATInfo holds IAT directory information.
+type IATInfo struct {
+	RVA  uint32
+	Size uint32
 }
 
 // buildCompleteImportData builds the complete import table preserving all existing imports.
-func (im *ImportModifier) buildCompleteImportData(section *pe.Section, existing []ExistingImportData, newDLL string, newFunctions []string) error {
+func (im *ImportModifier) buildCompleteImportData(section *pe.Section, existing []ExistingImportData, newDLL string, newFunctions []string) (IATInfo, error) {
 	is64bit := im.is64Bit()
 	ptrSize := im.getPtrSize(is64bit)
 
@@ -411,9 +428,35 @@ func (im *ImportModifier) buildCompleteImportData(section *pe.Section, existing 
 	// Write to file.
 	_, err := im.patcher.file.WriteAt(data, int64(section.Offset))
 	if err != nil {
-		return fmt.Errorf("写入完整导入数据失败: %w", err)
+		return IATInfo{}, fmt.Errorf("写入完整导入数据失败: %w", err)
 	}
-	return nil
+
+	// Calculate IAT info for Data Directory.
+	iatInfo := im.calculateIATInfo(baseRVA, &layout, existing, newFunctions, ptrSize)
+	return iatInfo, nil
+}
+
+// calculateIATInfo computes IAT directory information.
+func (im *ImportModifier) calculateIATInfo(baseRVA uint32, layout *importDataLayout, existing []ExistingImportData, newFunctions []string, ptrSize uint32) IATInfo {
+	// IAT starts at the first IAT table.
+	var iatStartRVA uint32
+	if len(existing) > 0 {
+		iatStartRVA = baseRVA + layout.iatOffsets[0]
+	} else {
+		iatStartRVA = baseRVA + layout.newIATOffset
+	}
+
+	// Calculate total IAT size.
+	var iatTotalSize uint32
+	for _, imp := range existing {
+		iatTotalSize += uint32(len(imp.IAT)+1) * ptrSize
+	}
+	iatTotalSize += (uint32(len(newFunctions)) + 1) * ptrSize
+
+	return IATInfo{
+		RVA:  iatStartRVA,
+		Size: iatTotalSize,
+	}
 }
 
 // calculateLayout computes offset layout for all import data components.
@@ -422,6 +465,7 @@ func (im *ImportModifier) calculateLayout(existing []ExistingImportData, newDLL 
 		intOffsets:         make([]uint32, len(existing)),
 		iatOffsets:         make([]uint32, len(existing)),
 		dllNameOffsets:     make([]uint32, len(existing)),
+		funcNameOffsets:    make([][]uint32, len(existing)),
 		newFuncNameOffsets: make([]uint32, len(newFunctions)),
 	}
 
@@ -451,6 +495,17 @@ func (im *ImportModifier) calculateLayout(existing []ExistingImportData, newDLL 
 	}
 	layout.newDLLNameOffset = offset
 	offset += uint32(len(newDLL)) + 1
+
+	// Function names for existing imports.
+	for i, imp := range existing {
+		layout.funcNameOffsets[i] = make([]uint32, len(imp.Functions))
+		for j, fn := range imp.Functions {
+			if !fn.IsByOrdinal {
+				layout.funcNameOffsets[i][j] = offset
+				offset += 2 + uint32(len(fn.Name)) + 1 // hint + name + null
+			}
+		}
+	}
 
 	// Function names for new import.
 	for i, fn := range newFunctions {
@@ -486,10 +541,24 @@ func (im *ImportModifier) writeDescriptors(data []byte, layout *importDataLayout
 
 // writeThunks writes INT and IAT thunks to data buffer.
 func (im *ImportModifier) writeThunks(data []byte, layout *importDataLayout, existing []ExistingImportData, newFunctions []string, baseRVA uint32, is64bit bool, ptrSize uint32) {
-	// Write existing imports.
+	ordinalFlag := im.getOrdinalFlag(is64bit)
+
+	// Write existing imports with updated RVAs.
 	for i, imp := range existing {
-		im.writeThunkArray(data, layout.intOffsets[i], imp.INT, is64bit, ptrSize)
-		im.writeThunkArray(data, layout.iatOffsets[i], imp.IAT, is64bit, ptrSize)
+		for j, fn := range imp.Functions {
+			var thunkValue uint64
+			if fn.IsByOrdinal {
+				thunkValue = ordinalFlag | uint64(fn.Ordinal)
+			} else {
+				// Point to new function name location.
+				thunkValue = uint64(baseRVA + layout.funcNameOffsets[i][j])
+			}
+
+			intPos := layout.intOffsets[i] + uint32(j)*ptrSize
+			iatPos := layout.iatOffsets[i] + uint32(j)*ptrSize
+			im.writeThunkEntry(data, intPos, thunkValue, is64bit)
+			im.writeThunkEntry(data, iatPos, thunkValue, is64bit)
+		}
 	}
 
 	// Write new import.
@@ -502,6 +571,7 @@ func (im *ImportModifier) writeThunks(data []byte, layout *importDataLayout, exi
 
 // writeStrings writes DLL and function names to data buffer.
 func (im *ImportModifier) writeStrings(data []byte, layout *importDataLayout, existing []ExistingImportData, newDLL string, newFunctions []string) {
+	// Write DLL names.
 	for i, imp := range existing {
 		pos := layout.dllNameOffsets[i]
 		copy(data[pos:], imp.DLLName)
@@ -510,6 +580,19 @@ func (im *ImportModifier) writeStrings(data []byte, layout *importDataLayout, ex
 	copy(data[layout.newDLLNameOffset:], newDLL)
 	data[layout.newDLLNameOffset+uint32(len(newDLL))] = 0
 
+	// Write function names for existing imports.
+	for i, imp := range existing {
+		for j, fn := range imp.Functions {
+			if !fn.IsByOrdinal {
+				pos := layout.funcNameOffsets[i][j]
+				binary.LittleEndian.PutUint16(data[pos:], fn.Hint)
+				copy(data[pos+2:], fn.Name)
+				data[pos+2+uint32(len(fn.Name))] = 0
+			}
+		}
+	}
+
+	// Write function names for new import.
 	for i := range newFunctions {
 		pos := layout.newFuncNameOffsets[i]
 		fn := newFunctions[i]
@@ -556,9 +639,9 @@ func encodeDescriptor(buf []byte, desc ImportDescriptor) {
 	binary.LittleEndian.PutUint32(buf[16:20], desc.FirstThunk)
 }
 
-// updateImportDirectory updates the Import Directory in Optional Header.
-func (im *ImportModifier) updateImportDirectory(rva, size uint32) error {
-	// Calculate offset to Import Directory entry in Optional Header.
+// updateImportDirectory updates the Import Directory and IAT Directory in Optional Header.
+func (im *ImportModifier) updateImportDirectory(rva, size uint32, iatInfo IATInfo) error {
+	// Calculate offset to Data Directory in Optional Header.
 	dosHeader := make([]byte, 64)
 	_, err := im.patcher.file.ReadAt(dosHeader, 0)
 	if err != nil {
@@ -588,17 +671,33 @@ func (im *ImportModifier) updateImportDirectory(rva, size uint32) error {
 		return fmt.Errorf("unknown PE magic: 0x%X", magic)
 	}
 
-	// Import Directory is at index 1 in Data Directory array.
+	// Update Import Directory (index 1).
 	importDirOffset := dataDirOffset + (1 * 8)
-
-	// Write VirtualAddress and Size.
 	dirData := make([]byte, 8)
 	binary.LittleEndian.PutUint32(dirData[0:4], rva)
 	binary.LittleEndian.PutUint32(dirData[4:8], size)
-
 	_, err = im.patcher.file.WriteAt(dirData, importDirOffset)
 	if err != nil {
 		return fmt.Errorf("更新导入目录失败: %w", err)
+	}
+
+	// Update IAT Directory (index 12).
+	iatDirOffset := dataDirOffset + (12 * 8)
+	binary.LittleEndian.PutUint32(dirData[0:4], iatInfo.RVA)
+	binary.LittleEndian.PutUint32(dirData[4:8], iatInfo.Size)
+	_, err = im.patcher.file.WriteAt(dirData, iatDirOffset)
+	if err != nil {
+		return fmt.Errorf("更新IAT目录失败: %w", err)
+	}
+
+	// Clear Bound Import Directory (index 11) if present.
+	// Bound imports cache function addresses, which are now invalid.
+	boundDirOffset := dataDirOffset + (11 * 8)
+	binary.LittleEndian.PutUint32(dirData[0:4], 0)
+	binary.LittleEndian.PutUint32(dirData[4:8], 0)
+	_, err = im.patcher.file.WriteAt(dirData, boundDirOffset)
+	if err != nil {
+		return fmt.Errorf("清除Bound Import目录失败: %w", err)
 	}
 
 	return nil
