@@ -403,86 +403,91 @@ func (im *ImportModifier) calculateCompatibleImportDataSize(existing []ExistingI
 	return size
 }
 
-// buildCompatibleImportData builds import data preserving original IAT RVAs.
-// Returns IATInfo for the new import only.
-func (im *ImportModifier) buildCompatibleImportData(section *pe.Section, existing []ExistingImportData, newDLL string, newFunctions []string) (IATInfo, error) {
-	is64bit := im.is64Bit()
-	ptrSize := uint32(4)
-	if is64bit {
-		ptrSize = 8
-	}
+// importDataOffsets holds calculated offsets for import data layout.
+type importDataOffsets struct {
+	intOffsets         []uint32
+	newINTOffset       uint32
+	newIATOffset       uint32
+	dllNameOffsets     []uint32
+	newDLLNameOffset   uint32
+	funcNameOffsets    [][]uint32
+	newFuncNameOffsets []uint32
+}
 
-	dataSize := im.calculateCompatibleImportDataSize(existing, newDLL, newFunctions)
-	data := make([]byte, dataSize)
-	baseRVA := section.VirtualAddress
-
-	// Calculate offsets.
-	descriptorsOffset := uint32(0)
+// calculateImportOffsets calculates all offsets for import data layout.
+func (im *ImportModifier) calculateImportOffsets(existing []ExistingImportData, newDLL string, newFunctions []string, ptrSize uint32) *importDataOffsets {
+	offsets := &importDataOffsets{}
 	currentOffset := uint32((len(existing) + 2) * 20) // after descriptor table
 
 	// INT offsets.
-	intOffsets := make([]uint32, len(existing))
+	offsets.intOffsets = make([]uint32, len(existing))
 	for i, imp := range existing {
-		intOffsets[i] = currentOffset
+		offsets.intOffsets[i] = currentOffset
 		currentOffset += uint32(len(imp.Functions)+1) * ptrSize
 	}
-	newINTOffset := currentOffset
+	offsets.newINTOffset = currentOffset
 	currentOffset += uint32(len(newFunctions)+1) * ptrSize
 
 	// IAT offset (only for new import).
-	newIATOffset := currentOffset
+	offsets.newIATOffset = currentOffset
 	currentOffset += uint32(len(newFunctions)+1) * ptrSize
 
 	// DLL name offsets.
-	dllNameOffsets := make([]uint32, len(existing))
+	offsets.dllNameOffsets = make([]uint32, len(existing))
 	for i, imp := range existing {
-		dllNameOffsets[i] = currentOffset
+		offsets.dllNameOffsets[i] = currentOffset
 		currentOffset += uint32(len(imp.DLLName)) + 1
 	}
-	newDLLNameOffset := currentOffset
+	offsets.newDLLNameOffset = currentOffset
 	currentOffset += uint32(len(newDLL)) + 1
 
 	// Function name offsets.
-	funcNameOffsets := make([][]uint32, len(existing))
+	offsets.funcNameOffsets = make([][]uint32, len(existing))
 	for i, imp := range existing {
-		funcNameOffsets[i] = make([]uint32, len(imp.Functions))
+		offsets.funcNameOffsets[i] = make([]uint32, len(imp.Functions))
 		for j, fn := range imp.Functions {
 			if !fn.IsByOrdinal {
-				funcNameOffsets[i][j] = currentOffset
+				offsets.funcNameOffsets[i][j] = currentOffset
 				currentOffset += 2 + uint32(len(fn.Name)) + 1
 			}
 		}
 	}
-	newFuncNameOffsets := make([]uint32, len(newFunctions))
+	offsets.newFuncNameOffsets = make([]uint32, len(newFunctions))
 	for i, fn := range newFunctions {
-		newFuncNameOffsets[i] = currentOffset
+		offsets.newFuncNameOffsets[i] = currentOffset
 		currentOffset += 2 + uint32(len(fn)) + 1
 	}
 
+	return offsets
+}
+
+// writeImportDescriptors writes all import descriptors to data buffer.
+func (im *ImportModifier) writeImportDescriptors(data []byte, baseRVA uint32, existing []ExistingImportData, offsets *importDataOffsets) {
 	// Write existing descriptors (with updated INT RVAs, but original IAT RVAs).
 	for i, imp := range existing {
 		desc := ImportDescriptor{
-			OriginalFirstThunk: baseRVA + intOffsets[i],
+			OriginalFirstThunk: baseRVA + offsets.intOffsets[i],
 			TimeDateStamp:      0,
 			ForwarderChain:     0,
-			Name:               baseRVA + dllNameOffsets[i],
+			Name:               baseRVA + offsets.dllNameOffsets[i],
 			FirstThunk:         imp.Descriptor.FirstThunk, // PRESERVE ORIGINAL IAT RVA!
 		}
-		encodeDescriptor(data[descriptorsOffset+uint32(i*20):], desc)
+		encodeDescriptor(data[uint32(i*20):], desc)
 	}
 
 	// Write new descriptor.
 	newDesc := ImportDescriptor{
-		OriginalFirstThunk: baseRVA + newINTOffset,
+		OriginalFirstThunk: baseRVA + offsets.newINTOffset,
 		TimeDateStamp:      0,
 		ForwarderChain:     0,
-		Name:               baseRVA + newDLLNameOffset,
-		FirstThunk:         baseRVA + newIATOffset,
+		Name:               baseRVA + offsets.newDLLNameOffset,
+		FirstThunk:         baseRVA + offsets.newIATOffset,
 	}
-	encodeDescriptor(data[descriptorsOffset+uint32(len(existing)*20):], newDesc)
+	encodeDescriptor(data[uint32(len(existing)*20):], newDesc)
+}
 
-	// Write null descriptor (already zero).
-
+// writeImportThunks writes INT entries for existing and new imports.
+func (im *ImportModifier) writeImportThunks(data []byte, baseRVA uint32, existing []ExistingImportData, newFunctions []string, offsets *importDataOffsets, is64bit bool, ptrSize uint32) {
 	// Write INT data for existing imports.
 	for i, imp := range existing {
 		for j, fn := range imp.Functions {
@@ -490,33 +495,35 @@ func (im *ImportModifier) buildCompatibleImportData(section *pe.Section, existin
 			if fn.IsByOrdinal {
 				thunkValue = im.getOrdinalFlag(is64bit) | uint64(fn.Ordinal)
 			} else {
-				thunkValue = uint64(baseRVA + funcNameOffsets[i][j])
+				thunkValue = uint64(baseRVA + offsets.funcNameOffsets[i][j])
 			}
-			im.writeThunkEntry(data, intOffsets[i]+uint32(j)*ptrSize, thunkValue, is64bit)
+			im.writeThunkEntry(data, offsets.intOffsets[i]+uint32(j)*ptrSize, thunkValue, is64bit)
 		}
-		// Null terminator (already zero).
 	}
 
 	// Write INT and IAT for new import.
 	for i := range newFunctions {
-		nameRVA := baseRVA + newFuncNameOffsets[i]
-		im.writeThunkEntry(data, newINTOffset+uint32(i)*ptrSize, uint64(nameRVA), is64bit)
-		im.writeThunkEntry(data, newIATOffset+uint32(i)*ptrSize, uint64(nameRVA), is64bit)
+		nameRVA := baseRVA + offsets.newFuncNameOffsets[i]
+		im.writeThunkEntry(data, offsets.newINTOffset+uint32(i)*ptrSize, uint64(nameRVA), is64bit)
+		im.writeThunkEntry(data, offsets.newIATOffset+uint32(i)*ptrSize, uint64(nameRVA), is64bit)
 	}
+}
 
+// writeImportNames writes DLL and function names to data buffer.
+func (im *ImportModifier) writeImportNames(data []byte, existing []ExistingImportData, newDLL string, newFunctions []string, offsets *importDataOffsets) {
 	// Write DLL names.
 	for i, imp := range existing {
-		copy(data[dllNameOffsets[i]:], imp.DLLName)
-		data[dllNameOffsets[i]+uint32(len(imp.DLLName))] = 0
+		copy(data[offsets.dllNameOffsets[i]:], imp.DLLName)
+		data[offsets.dllNameOffsets[i]+uint32(len(imp.DLLName))] = 0
 	}
-	copy(data[newDLLNameOffset:], newDLL)
-	data[newDLLNameOffset+uint32(len(newDLL))] = 0
+	copy(data[offsets.newDLLNameOffset:], newDLL)
+	data[offsets.newDLLNameOffset+uint32(len(newDLL))] = 0
 
 	// Write function names.
 	for i, imp := range existing {
 		for j, fn := range imp.Functions {
 			if !fn.IsByOrdinal {
-				offset := funcNameOffsets[i][j]
+				offset := offsets.funcNameOffsets[i][j]
 				binary.LittleEndian.PutUint16(data[offset:], fn.Hint)
 				copy(data[offset+2:], fn.Name)
 				data[offset+2+uint32(len(fn.Name))] = 0
@@ -524,20 +531,34 @@ func (im *ImportModifier) buildCompatibleImportData(section *pe.Section, existin
 		}
 	}
 	for i, fn := range newFunctions {
-		offset := newFuncNameOffsets[i]
-		binary.LittleEndian.PutUint16(data[offset:], 0) // hint = 0
+		offset := offsets.newFuncNameOffsets[i]
+		binary.LittleEndian.PutUint16(data[offset:], 0)
 		copy(data[offset+2:], fn)
 		data[offset+2+uint32(len(fn))] = 0
 	}
+}
 
-	// Write to file.
+// buildCompatibleImportData builds import data preserving original IAT RVAs.
+// Returns IATInfo for the new import only.
+func (im *ImportModifier) buildCompatibleImportData(section *pe.Section, existing []ExistingImportData, newDLL string, newFunctions []string) (IATInfo, error) {
+	is64bit := im.is64Bit()
+	ptrSize := im.getPtrSize(is64bit)
+
+	dataSize := im.calculateCompatibleImportDataSize(existing, newDLL, newFunctions)
+	data := make([]byte, dataSize)
+	baseRVA := section.VirtualAddress
+
+	offsets := im.calculateImportOffsets(existing, newDLL, newFunctions, ptrSize)
+	im.writeImportDescriptors(data, baseRVA, existing, offsets)
+	im.writeImportThunks(data, baseRVA, existing, newFunctions, offsets, is64bit, ptrSize)
+	im.writeImportNames(data, existing, newDLL, newFunctions, offsets)
+
 	if _, err := im.patcher.file.WriteAt(data, int64(section.Offset)); err != nil {
 		return IATInfo{}, fmt.Errorf("写入导入数据失败: %w", err)
 	}
 
-	// Return IAT info for new import only.
 	return IATInfo{
-		RVA:  baseRVA + newIATOffset,
+		RVA:  baseRVA + offsets.newIATOffset,
 		Size: (uint32(len(newFunctions)) + 1) * ptrSize,
 	}, nil
 }
