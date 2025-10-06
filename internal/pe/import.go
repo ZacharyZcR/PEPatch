@@ -86,12 +86,9 @@ func (im *ImportModifier) AddImport(dllName string, functions []string) error {
 		return err
 	}
 
-	// Calculate Import Directory size (just the descriptor table, not all data).
-	numDescriptors := len(existingData) + 1 // existing + new
-	importDirSize := uint32((numDescriptors + 1) * 20) // +1 for null descriptor
-
 	// Update Import Directory and IAT Directory in Optional Header.
-	if err := im.updateImportDirectory(newSection.VirtualAddress, importDirSize, iatInfo); err != nil {
+	// Note: Use full dataSize to match Go compiler's behavior, not just descriptor table size.
+	if err := im.updateImportDirectory(newSection.VirtualAddress, dataSize, iatInfo); err != nil {
 		return err
 	}
 
@@ -563,6 +560,12 @@ func (im *ImportModifier) writeThunks(data []byte, layout *importDataLayout, exi
 			im.writeThunkEntry(data, intPos, thunkValue, is64bit)
 			im.writeThunkEntry(data, iatPos, thunkValue, is64bit)
 		}
+
+		// Write null terminator for this import's INT and IAT.
+		intNullPos := layout.intOffsets[i] + uint32(len(imp.Functions))*ptrSize
+		iatNullPos := layout.iatOffsets[i] + uint32(len(imp.Functions))*ptrSize
+		im.writeThunkEntry(data, intNullPos, 0, is64bit)
+		im.writeThunkEntry(data, iatNullPos, 0, is64bit)
 	}
 
 	// Write new import.
@@ -571,6 +574,12 @@ func (im *ImportModifier) writeThunks(data []byte, layout *importDataLayout, exi
 		im.writeThunkEntry(data, layout.newINTOffset+uint32(i)*ptrSize, uint64(nameRVA), is64bit)
 		im.writeThunkEntry(data, layout.newIATOffset+uint32(i)*ptrSize, uint64(nameRVA), is64bit)
 	}
+
+	// Write null terminator for new import's INT and IAT.
+	newIntNullPos := layout.newINTOffset + uint32(len(newFunctions))*ptrSize
+	newIatNullPos := layout.newIATOffset + uint32(len(newFunctions))*ptrSize
+	im.writeThunkEntry(data, newIntNullPos, 0, is64bit)
+	im.writeThunkEntry(data, newIatNullPos, 0, is64bit)
 }
 
 // writeStrings writes DLL and function names to data buffer.
@@ -705,6 +714,16 @@ func (im *ImportModifier) updateImportDirectory(rva, size uint32, iatInfo IATInf
 	_, err = im.patcher.file.WriteAt(dirData, delayDirOffset)
 	if err != nil {
 		return fmt.Errorf("清除Delay Import目录失败: %w", err)
+	}
+
+	// Clear Load Config Directory (index 10) if present.
+	// Load Config may contain pointers to import-related structures.
+	loadConfigOffset := dataDirOffset + (10 * 8)
+	binary.LittleEndian.PutUint32(dirData[0:4], 0)
+	binary.LittleEndian.PutUint32(dirData[4:8], 0)
+	_, err = im.patcher.file.WriteAt(dirData, loadConfigOffset)
+	if err != nil {
+		return fmt.Errorf("清除Load Config目录失败: %w", err)
 	}
 
 	return nil
