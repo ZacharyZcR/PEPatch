@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ZacharyZcR/PEPatch/internal/cli"
 	"github.com/ZacharyZcR/PEPatch/internal/pe"
@@ -27,6 +28,7 @@ var (
 	injectSection  = flag.String("inject-section", "", "注入新节区的名称 (最大8字符)")
 	sectionSize    = flag.Uint("section-size", 4096, "新节区大小（字节）")
 	sectionPerms   = flag.String("section-perms", "RWX", "新节区权限 (R-X, RW-, RWX)")
+	addImport      = flag.String("add-import", "", "添加DLL导入 (格式: DLL:Func1,Func2,...)")
 	updateCksum    = flag.Bool("update-checksum", true, "修改后更新校验和")
 	createBackup   = flag.Bool("backup", true, "修改前创建备份文件")
 )
@@ -91,8 +93,8 @@ func analyzePE(filepath string) error {
 }
 
 func patchPE(filepath string) error {
-	if *sectionName == "" && *entryPoint == "" && *injectSection == "" {
-		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, 或 -inject-section)")
+	if *sectionName == "" && *entryPoint == "" && *injectSection == "" && *addImport == "" {
+		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, -inject-section, 或 -add-import)")
 	}
 
 	if err := createBackupIfNeeded(filepath); err != nil {
@@ -132,6 +134,13 @@ func applyPatches(patcher *pe.Patcher) error {
 
 	if *injectSection != "" {
 		if err := injectNewSection(patcher); err != nil {
+			return err
+		}
+		modified = true
+	}
+
+	if *addImport != "" {
+		if err := addDLLImport(patcher); err != nil {
 			return err
 		}
 		modified = true
@@ -244,6 +253,44 @@ func injectNewSection(patcher *pe.Patcher) error {
 	return patcher.InjectSection(*injectSection, data, characteristics)
 }
 
+func addDLLImport(patcher *pe.Patcher) error {
+	// Parse format: "DLL:Func1,Func2,Func3"
+	parts := strings.SplitN(*addImport, ":", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("导入格式错误，应为: DLL:Func1,Func2,...")
+	}
+
+	dllName := strings.TrimSpace(parts[0])
+	if dllName == "" {
+		return fmt.Errorf("DLL名称不能为空")
+	}
+
+	funcList := strings.Split(parts[1], ",")
+	var functions []string
+	for _, fn := range funcList {
+		fn = strings.TrimSpace(fn)
+		if fn != "" {
+			functions = append(functions, fn)
+		}
+	}
+
+	if len(functions) == 0 {
+		return fmt.Errorf("必须指定至少一个函数")
+	}
+
+	cyan := color.New(color.FgCyan)
+	_, _ = cyan.Printf("正在添加导入: %s (%d 个函数)...\n", dllName, len(functions))
+
+	// Extend file size first for new section.
+	lastSection := patcher.File().Sections[len(patcher.File().Sections)-1]
+	newFileSize := int64(lastSection.Offset + lastSection.Size + 65536) // 64KB buffer
+	if err := patcher.ExtendFileSize(newFileSize); err != nil {
+		return fmt.Errorf("扩展文件失败: %w", err)
+	}
+
+	return patcher.AddImport(dllName, functions)
+}
+
 func printPatchSuccess() {
 	green := color.New(color.FgGreen, color.Bold)
 	fmt.Println()
@@ -255,6 +302,9 @@ func printPatchSuccess() {
 	}
 	if *injectSection != "" {
 		_, _ = green.Printf("✓ 成功注入新节区: %s (%d 字节, 权限: %s)\n", *injectSection, *sectionSize, *sectionPerms)
+	}
+	if *addImport != "" {
+		_, _ = green.Printf("✓ 成功添加导入: %s\n", *addImport)
 	}
 	fmt.Println()
 }
@@ -378,6 +428,7 @@ func printUsage() {
 	fmt.Println("  -inject-section <名>  注入新节区的名称（最大8字符）")
 	fmt.Println("  -section-size <大小>  新节区大小（字节，默认: 4096）")
 	fmt.Println("  -section-perms <RWX>  新节区权限（默认: RWX）")
+	fmt.Println("  -add-import <导入>    添加DLL导入（格式: DLL:Func1,Func2,...）")
 	fmt.Println("  -backup               修改前创建备份（默认: true）")
 	fmt.Println("  -update-checksum      修改后更新校验和（默认: true）")
 
@@ -399,6 +450,9 @@ func printUsage() {
 	fmt.Println("\n  # 注入新节区")
 	fmt.Println("  pepatch -patch -inject-section .newsec program.exe")
 	fmt.Println("  pepatch -patch -inject-section .code -section-size 8192 -section-perms R-X program.exe")
+	fmt.Println("\n  # 添加DLL导入")
+	fmt.Println("  pepatch -patch -add-import user32.dll:MessageBoxA,MessageBoxW program.exe")
+	fmt.Println("  pepatch -patch -add-import ws2_32.dll:WSAStartup,socket,connect program.exe")
 	fmt.Println("\n  # 组合修改")
 	fmt.Println("  pepatch -patch -section .text -perms R-X -entry 0x1000 file.exe")
 	fmt.Println("  pepatch -patch -entry 0x5000 -backup=false file.exe")

@@ -236,3 +236,33 @@ func (p *Patcher) GetEntryPoint() (uint32, error) {
 func (p *Patcher) File() *pe.File {
 	return p.peFile
 }
+
+// Reload re-parses the PE file to reflect changes made to disk.
+func (p *Patcher) Reload() error {
+	// Sync file to ensure all writes are flushed
+	if err := p.file.Sync(); err != nil {
+		return fmt.Errorf("同步文件失败: %w", err)
+	}
+
+	// Close existing PE file (but not the file handle)
+	if p.peFile != nil {
+		_ = p.peFile.Close()
+	}
+
+	// Re-parse PE file from current file handle
+	peFile, err := pe.NewFile(p.file)
+	if err != nil {
+		return fmt.Errorf("重新解析PE文件失败: %w", err)
+	}
+
+	p.peFile = peFile
+
+	// Update file size
+	stat, err := p.file.Stat()
+	if err != nil {
+		return fmt.Errorf("获取文件信息失败: %w", err)
+	}
+	p.filesize = stat.Size()
+
+	return nil
+}

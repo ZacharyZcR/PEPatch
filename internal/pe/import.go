@@ -30,8 +30,7 @@ type ImportDescriptor struct {
 }
 
 // AddImport adds a new DLL import with specified functions.
-// WARNING: Current implementation is simplified and replaces the entire import table.
-// Production use requires copying all existing import data.
+// This is a complete implementation that preserves all existing imports.
 func (im *ImportModifier) AddImport(dllName string, functions []string) error {
 	// Find import directory.
 	importDir, err := im.getImportDirectory()
@@ -56,24 +55,34 @@ func (im *ImportModifier) AddImport(dllName string, functions []string) error {
 		}
 	}
 
-	// Find or create space for new import data.
-	// For simplicity, we'll use a new section.
-	newSectionName := ".idata2"
-	dataSize := im.calculateImportDataSize(dllName, functions, len(descriptors)+1)
+	// Read all existing import data.
+	existingData, err := im.readAllImportData(descriptors)
+	if err != nil {
+		return fmt.Errorf("读取现有导入数据失败: %w", err)
+	}
 
-	// Create new section for import data.
+	// Calculate total size for new import table.
+	dataSize := im.calculateCompleteImportDataSize(existingData, dllName, functions)
+
+	// Create new section for complete import data.
+	newSectionName := ".idata2"
 	err = im.patcher.InjectSection(newSectionName, make([]byte, dataSize),
-		pe.IMAGE_SCN_CNT_INITIALIZED_DATA | pe.IMAGE_SCN_MEM_READ | pe.IMAGE_SCN_MEM_WRITE)
+		pe.IMAGE_SCN_CNT_INITIALIZED_DATA|pe.IMAGE_SCN_MEM_READ|pe.IMAGE_SCN_MEM_WRITE)
 	if err != nil {
 		return fmt.Errorf("创建导入数据节区失败: %w", err)
+	}
+
+	// Reload PE file to reflect the new section.
+	if err := im.patcher.Reload(); err != nil {
+		return fmt.Errorf("重新加载PE文件失败: %w", err)
 	}
 
 	// Get the new section.
 	sections := im.patcher.File().Sections
 	newSection := sections[len(sections)-1]
 
-	// Build new import data in the section.
-	if err := im.buildImportData(newSection, dllName, functions, descriptors); err != nil {
+	// Build complete import data preserving all existing imports.
+	if err := im.buildCompleteImportData(newSection, existingData, dllName, functions); err != nil {
 		return err
 	}
 
@@ -184,6 +193,191 @@ func (im *ImportModifier) readString(rva uint32) (string, error) {
 	return buf.String(), nil
 }
 
+// ExistingImportData stores complete data for an existing import.
+type ExistingImportData struct {
+	Descriptor ImportDescriptor
+	DLLName    string
+	INT        []uint64 // Import Name Table entries
+	IAT        []uint64 // Import Address Table entries
+	Functions  []ImportFunction
+}
+
+// ImportFunction represents an imported function.
+type ImportFunction struct {
+	Name    string
+	Ordinal uint16
+	IsByOrdinal bool
+	Hint    uint16
+}
+
+// readAllImportData reads all existing import data for preservation.
+func (im *ImportModifier) readAllImportData(descriptors []ImportDescriptor) ([]ExistingImportData, error) {
+	var allData []ExistingImportData
+
+	is64bit := false
+	if _, ok := im.patcher.peFile.OptionalHeader.(*pe.OptionalHeader64); ok {
+		is64bit = true
+	}
+
+	for _, desc := range descriptors {
+		data := ExistingImportData{
+			Descriptor: desc,
+		}
+
+		// Read DLL name.
+		dllName, err := im.readString(desc.Name)
+		if err != nil {
+			continue
+		}
+		data.DLLName = dllName
+
+		// Read INT and IAT.
+		intEntries, functions, err := im.readImportThunks(desc.OriginalFirstThunk, is64bit)
+		if err != nil {
+			continue
+		}
+		data.INT = intEntries
+		data.Functions = functions
+
+		// Read IAT (should mirror INT initially).
+		iatEntries, _, err := im.readImportThunks(desc.FirstThunk, is64bit)
+		if err != nil {
+			continue
+		}
+		data.IAT = iatEntries
+
+		allData = append(allData, data)
+	}
+
+	return allData, nil
+}
+
+// readImportThunks reads thunk data (INT or IAT).
+func (im *ImportModifier) readImportThunks(rva uint32, is64bit bool) ([]uint64, []ImportFunction, error) {
+	if rva == 0 {
+		return nil, nil, fmt.Errorf("invalid RVA")
+	}
+
+	offset, err := im.rvaToOffset(rva)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var entries []uint64
+	var functions []ImportFunction
+
+	ordinalFlag := uint64(0x80000000)
+	if is64bit {
+		ordinalFlag = 0x8000000000000000
+	}
+
+	for {
+		var thunkData uint64
+		if is64bit {
+			buf := make([]byte, 8)
+			_, err := im.patcher.file.ReadAt(buf, int64(offset))
+			if err != nil {
+				break
+			}
+			thunkData = binary.LittleEndian.Uint64(buf)
+			offset += 8
+		} else {
+			buf := make([]byte, 4)
+			_, err := im.patcher.file.ReadAt(buf, int64(offset))
+			if err != nil {
+				break
+			}
+			thunkData = uint64(binary.LittleEndian.Uint32(buf))
+			offset += 4
+		}
+
+		if thunkData == 0 {
+			break
+		}
+
+		entries = append(entries, thunkData)
+
+		// Parse function info.
+		var fn ImportFunction
+		if thunkData&ordinalFlag != 0 {
+			// Import by ordinal.
+			fn.IsByOrdinal = true
+			fn.Ordinal = uint16(thunkData & 0xFFFF)
+		} else {
+			// Import by name.
+			nameRVA := uint32(thunkData)
+			nameOffset, err := im.rvaToOffset(nameRVA)
+			if err != nil {
+				continue
+			}
+
+			// Read hint.
+			hintBuf := make([]byte, 2)
+			_, err = im.patcher.file.ReadAt(hintBuf, int64(nameOffset))
+			if err == nil {
+				fn.Hint = binary.LittleEndian.Uint16(hintBuf)
+			}
+
+			// Read name.
+			name, err := im.readStringAtOffset(nameOffset + 2)
+			if err != nil {
+				continue
+			}
+			fn.Name = name
+		}
+
+		functions = append(functions, fn)
+
+		if len(entries) > 10000 {
+			break
+		}
+	}
+
+	return entries, functions, nil
+}
+
+// calculateCompleteImportDataSize calculates total size including existing imports.
+func (im *ImportModifier) calculateCompleteImportDataSize(existing []ExistingImportData, newDLL string, newFunctions []string) uint32 {
+	is64bit := false
+	if _, ok := im.patcher.peFile.OptionalHeader.(*pe.OptionalHeader64); ok {
+		is64bit = true
+	}
+
+	ptrSize := uint32(4)
+	if is64bit {
+		ptrSize = 8
+	}
+
+	size := uint32(0)
+
+	// Import descriptors: existing + new + null terminator.
+	numDescriptors := len(existing) + 1
+	size += uint32((numDescriptors + 1) * 20)
+
+	// INT and IAT for all imports.
+	for _, imp := range existing {
+		size += uint32(len(imp.INT)+1) * ptrSize  // INT
+		size += uint32(len(imp.IAT)+1) * ptrSize  // IAT
+	}
+	size += (uint32(len(newFunctions)) + 1) * ptrSize * 2 // New INT + IAT
+
+	// DLL names.
+	for _, imp := range existing {
+		size += uint32(len(imp.DLLName)) + 1
+	}
+	size += uint32(len(newDLL)) + 1
+
+	// Function names (only for new import - existing function names remain in original location).
+	for _, fn := range newFunctions {
+		size += 2 + uint32(len(fn)) + 1
+	}
+
+	// Align to 16 bytes.
+	size = alignUp(size, 16)
+
+	return size
+}
+
 // calculateImportDataSize calculates size needed for new import data.
 func (im *ImportModifier) calculateImportDataSize(dllName string, functions []string, numDescriptors int) uint32 {
 	size := uint32(0)
@@ -219,7 +413,158 @@ func (im *ImportModifier) calculateImportDataSize(dllName string, functions []st
 	return size
 }
 
-// buildImportData builds the complete import data structure.
+// buildCompleteImportData builds the complete import table preserving all existing imports.
+func (im *ImportModifier) buildCompleteImportData(section *pe.Section, existing []ExistingImportData, newDLL string, newFunctions []string) error {
+	baseRVA := section.VirtualAddress
+
+	is64bit := false
+	if _, ok := im.patcher.peFile.OptionalHeader.(*pe.OptionalHeader64); ok {
+		is64bit = true
+	}
+
+	ptrSize := uint32(4)
+	if is64bit {
+		ptrSize = 8
+	}
+
+	// Calculate total data size.
+	dataSize := im.calculateCompleteImportDataSize(existing, newDLL, newFunctions)
+	data := make([]byte, dataSize)
+
+	// Phase 1: Layout calculation.
+	offset := uint32(0)
+
+	// Descriptors area.
+	descriptorsOffset := offset
+	numDescriptors := len(existing) + 1
+	offset += uint32((numDescriptors + 1) * 20)
+
+	// INT/IAT area for existing imports.
+	intOffsets := make([]uint32, len(existing))
+	iatOffsets := make([]uint32, len(existing))
+	for i, imp := range existing {
+		intOffsets[i] = offset
+		offset += uint32(len(imp.INT)+1) * ptrSize
+
+		iatOffsets[i] = offset
+		offset += uint32(len(imp.IAT)+1) * ptrSize
+	}
+
+	// INT/IAT for new import.
+	newINTOffset := offset
+	offset += (uint32(len(newFunctions)) + 1) * ptrSize
+	newIATOffset := offset
+	offset += (uint32(len(newFunctions)) + 1) * ptrSize
+
+	// Strings area: DLL names.
+	dllNameOffsets := make([]uint32, len(existing))
+	for i, imp := range existing {
+		dllNameOffsets[i] = offset
+		offset += uint32(len(imp.DLLName)) + 1
+	}
+	newDLLNameOffset := offset
+	offset += uint32(len(newDLL)) + 1
+
+	// Function names (only for new import - existing function names remain in original location).
+	newFuncNameOffsets := make([]uint32, len(newFunctions))
+	for i, fn := range newFunctions {
+		newFuncNameOffsets[i] = offset
+		offset += 2 + uint32(len(fn)) + 1
+	}
+
+	// Phase 2: Write descriptors.
+	for i := range existing {
+		desc := ImportDescriptor{
+			OriginalFirstThunk: baseRVA + intOffsets[i],
+			TimeDateStamp:      0,
+			ForwarderChain:     0,
+			Name:               baseRVA + dllNameOffsets[i],
+			FirstThunk:         baseRVA + iatOffsets[i],
+		}
+		encodeDescriptor(data[descriptorsOffset+uint32(i*20):], desc)
+	}
+
+	// New import descriptor.
+	newDesc := ImportDescriptor{
+		OriginalFirstThunk: baseRVA + newINTOffset,
+		TimeDateStamp:      0,
+		ForwarderChain:     0,
+		Name:               baseRVA + newDLLNameOffset,
+		FirstThunk:         baseRVA + newIATOffset,
+	}
+	encodeDescriptor(data[descriptorsOffset+uint32(len(existing)*20):], newDesc)
+
+	// Null descriptor already zero-initialized.
+
+	// Phase 3: Write INT/IAT for existing imports (preserve original values).
+	for i, imp := range existing {
+		// Write INT - use original thunk values.
+		for j := range imp.INT {
+			pos := intOffsets[i] + uint32(j)*ptrSize
+			if is64bit {
+				binary.LittleEndian.PutUint64(data[pos:], imp.INT[j])
+			} else {
+				binary.LittleEndian.PutUint32(data[pos:], uint32(imp.INT[j]))
+			}
+		}
+		// Null terminator already zero-initialized.
+
+		// Write IAT - use original thunk values.
+		for j := range imp.IAT {
+			pos := iatOffsets[i] + uint32(j)*ptrSize
+			if is64bit {
+				binary.LittleEndian.PutUint64(data[pos:], imp.IAT[j])
+			} else {
+				binary.LittleEndian.PutUint32(data[pos:], uint32(imp.IAT[j]))
+			}
+		}
+	}
+
+	// Phase 4: Write INT/IAT for new import.
+	for i := range newFunctions {
+		nameRVA := baseRVA + newFuncNameOffsets[i]
+
+		intPos := newINTOffset + uint32(i)*ptrSize
+		iatPos := newIATOffset + uint32(i)*ptrSize
+
+		if is64bit {
+			binary.LittleEndian.PutUint64(data[intPos:], uint64(nameRVA))
+			binary.LittleEndian.PutUint64(data[iatPos:], uint64(nameRVA))
+		} else {
+			binary.LittleEndian.PutUint32(data[intPos:], nameRVA)
+			binary.LittleEndian.PutUint32(data[iatPos:], nameRVA)
+		}
+	}
+
+	// Phase 5: Write DLL names.
+	for i, imp := range existing {
+		pos := dllNameOffsets[i]
+		copy(data[pos:], imp.DLLName)
+		data[pos+uint32(len(imp.DLLName))] = 0
+	}
+	copy(data[newDLLNameOffset:], newDLL)
+	data[newDLLNameOffset+uint32(len(newDLL))] = 0
+
+	// Phase 6: Write function names (only for new import).
+	// Existing import function names remain in their original locations.
+	for i, fn := range newFunctions {
+		pos := newFuncNameOffsets[i]
+		binary.LittleEndian.PutUint16(data[pos:], 0) // Hint = 0
+		copy(data[pos+2:], fn)
+		data[pos+2+uint32(len(fn))] = 0
+	}
+
+	// Write data to section.
+	fileOffset := int64(section.Offset)
+	_, err := im.patcher.file.WriteAt(data, fileOffset)
+	if err != nil {
+		return fmt.Errorf("写入完整导入数据失败: %w", err)
+	}
+
+	return nil
+}
+
+// buildImportData builds the complete import data structure (deprecated).
 func (im *ImportModifier) buildImportData(section *pe.Section, dllName string, functions []string, existingDescriptors []ImportDescriptor) error {
 	baseRVA := section.VirtualAddress
 
@@ -326,8 +671,29 @@ func (im *ImportModifier) updateImportDirectory(rva, size uint32) error {
 
 	peHeaderOffset := int64(binary.LittleEndian.Uint32(dosHeader[60:64]))
 
-	// Import Directory is at offset 96 in Optional Header (for both PE32 and PE32+).
-	importDirOffset := peHeaderOffset + 4 + 20 + 96
+	// Determine if PE32 or PE32+.
+	optHeaderStart := peHeaderOffset + 4 + 20
+	magicBuf := make([]byte, 2)
+	_, err = im.patcher.file.ReadAt(magicBuf, optHeaderStart)
+	if err != nil {
+		return err
+	}
+	magic := binary.LittleEndian.Uint16(magicBuf)
+
+	// Data Directory starts at different offsets:
+	// PE32 (0x10b): offset 96
+	// PE32+ (0x20b): offset 112
+	var dataDirOffset int64
+	if magic == 0x10b { // PE32
+		dataDirOffset = optHeaderStart + 96
+	} else if magic == 0x20b { // PE32+
+		dataDirOffset = optHeaderStart + 112
+	} else {
+		return fmt.Errorf("unknown PE magic: 0x%X", magic)
+	}
+
+	// Import Directory is at index 1 in Data Directory array.
+	importDirOffset := dataDirOffset + (1 * 8)
 
 	// Write VirtualAddress and Size.
 	dirData := make([]byte, 8)
