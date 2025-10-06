@@ -35,9 +35,11 @@ var (
 	addExport     = flag.String("add-export", "", "添加导出函数（函数名）")
 	modifyExport  = flag.String("modify-export", "", "修改导出函数（函数名）")
 	removeExport  = flag.String("remove-export", "", "删除导出函数（函数名）")
-	exportRVA     = flag.String("export-rva", "", "导出函数RVA地址（十六进制，用于add-export和modify-export）")
-	updateCksum   = flag.Bool("update-checksum", true, "修改后更新校验和")
-	createBackup  = flag.Bool("backup", true, "修改前创建备份文件")
+	exportRVA       = flag.String("export-rva", "", "导出函数RVA地址（十六进制，用于add-export和modify-export）")
+	removeSig       = flag.Bool("remove-signature", false, "移除数字签名")
+	truncateSig     = flag.Bool("truncate-cert", true, "移除签名时截断证书数据（节省空间）")
+	updateCksum     = flag.Bool("update-checksum", true, "修改后更新校验和")
+	createBackup    = flag.Bool("backup", true, "修改前创建备份文件")
 )
 
 func main() {
@@ -108,8 +110,8 @@ func analyzePE(filepath string) error {
 
 func patchPE(filepath string) error {
 	if *sectionName == "" && *entryPoint == "" && *injectSection == "" && *addImport == "" &&
-		*addExport == "" && *modifyExport == "" && *removeExport == "" {
-		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, -inject-section, -add-import, 或导出操作)")
+		*addExport == "" && *modifyExport == "" && *removeExport == "" && !*removeSig {
+		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, -inject-section, -add-import, 导出操作, 或 -remove-signature)")
 	}
 
 	if err := createBackupIfNeeded(filepath); err != nil {
@@ -177,6 +179,13 @@ func applyPatches(patcher *pe.Patcher) error {
 
 	if *removeExport != "" {
 		if err := removeExportFunc(patcher); err != nil {
+			return err
+		}
+		modified = true
+	}
+
+	if *removeSig {
+		if err := removeSignature(patcher); err != nil {
 			return err
 		}
 		modified = true
@@ -369,6 +378,34 @@ func removeExportFunc(patcher *pe.Patcher) error {
 	return modifier.RemoveExport(*removeExport)
 }
 
+func removeSignature(patcher *pe.Patcher) error {
+	cyan := color.New(color.FgCyan)
+	yellow := color.New(color.FgYellow)
+
+	// Check if signature exists
+	remover := pe.NewSignatureRemover(patcher)
+	hasSig, offset, size := remover.HasSignature()
+
+	if !hasSig {
+		_, _ = yellow.Println("⚠️  文件没有数字签名，跳过移除操作")
+		return nil
+	}
+
+	_, _ = cyan.Printf("正在移除数字签名 (偏移: 0x%X, 大小: %d 字节)...\n", offset, size)
+
+	if err := remover.RemoveSignature(*truncateSig); err != nil {
+		return err
+	}
+
+	if *truncateSig {
+		_, _ = cyan.Printf("✓ 已移除签名并截断文件\n")
+	} else {
+		_, _ = cyan.Printf("✓ 已移除签名（保留证书数据）\n")
+	}
+
+	return nil
+}
+
 func printPatchSuccess() {
 	green := color.New(color.FgGreen, color.Bold)
 	fmt.Println()
@@ -392,6 +429,9 @@ func printPatchSuccess() {
 	}
 	if *removeExport != "" {
 		_, _ = green.Printf("✓ 成功删除导出: %s\n", *removeExport)
+	}
+	if *removeSig {
+		_, _ = green.Printf("✓ 成功移除数字签名\n")
 	}
 	fmt.Println()
 }
@@ -563,6 +603,8 @@ func printUsage() {
 	fmt.Println("  -modify-export <名称> 修改导出函数RVA（需配合 -export-rva）")
 	fmt.Println("  -remove-export <名称> 删除导出函数")
 	fmt.Println("  -export-rva <地址>    导出函数RVA地址（十六进制，例如: 0x1000）")
+	fmt.Println("  -remove-signature     移除数字签名")
+	fmt.Println("  -truncate-cert        移除签名时截断证书数据（默认: true，节省空间）")
 	fmt.Println("  -backup               修改前创建备份（默认: true）")
 	fmt.Println("  -update-checksum      修改后更新校验和（默认: true）")
 
@@ -595,6 +637,9 @@ func printUsage() {
 	fmt.Println("  pepatch -patch -add-export MyFunction -export-rva 0x1000 mydll.dll")
 	fmt.Println("  pepatch -patch -modify-export ExistingFunc -export-rva 0x2000 mydll.dll")
 	fmt.Println("  pepatch -patch -remove-export OldFunction mydll.dll")
+	fmt.Println("\n  # 数字签名移除")
+	fmt.Println("  pepatch -patch -remove-signature program.exe")
+	fmt.Println("  pepatch -patch -remove-signature -truncate-cert=false program.exe  # 保留证书数据")
 	fmt.Println("\n  # 组合修改")
 	fmt.Println("  pepatch -patch -section .text -perms R-X -entry 0x1000 file.exe")
 	fmt.Println("  pepatch -patch -entry 0x5000 -backup=false file.exe")

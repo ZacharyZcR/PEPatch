@@ -157,3 +157,98 @@ func parsePKCS7(data []byte, info *SignatureInfo) error {
 
 	return nil
 }
+
+// SignatureRemover handles digital signature removal.
+type SignatureRemover struct {
+	patcher *Patcher
+}
+
+// NewSignatureRemover creates a new signature remover.
+func NewSignatureRemover(patcher *Patcher) *SignatureRemover {
+	return &SignatureRemover{
+		patcher: patcher,
+	}
+}
+
+// HasSignature checks if the PE file has a digital signature.
+func (sr *SignatureRemover) HasSignature() (bool, uint32, uint32) {
+	oh := sr.patcher.File().OptionalHeader
+
+	var certRVA, certSize uint32
+
+	if oh32, ok := oh.(*pe.OptionalHeader32); ok {
+		if len(oh32.DataDirectory) > 4 {
+			certRVA = oh32.DataDirectory[4].VirtualAddress
+			certSize = oh32.DataDirectory[4].Size
+		}
+	} else if oh64, ok := oh.(*pe.OptionalHeader64); ok {
+		if len(oh64.DataDirectory) > 4 {
+			certRVA = oh64.DataDirectory[4].VirtualAddress
+			certSize = oh64.DataDirectory[4].Size
+		}
+	}
+
+	return certRVA != 0 && certSize != 0, certRVA, certSize
+}
+
+// RemoveSignature removes the digital signature from the PE file.
+func (sr *SignatureRemover) RemoveSignature(truncate bool) error {
+	hasSig, certOffset, _ := sr.HasSignature()
+	if !hasSig {
+		return fmt.Errorf("文件没有数字签名")
+	}
+
+	// Read DOS header to get PE offset
+	dosHeader := make([]byte, 64)
+	if _, err := sr.patcher.file.ReadAt(dosHeader, 0); err != nil {
+		return fmt.Errorf("读取DOS头失败: %w", err)
+	}
+
+	peOffset := binary.LittleEndian.Uint32(dosHeader[60:64])
+
+	// Calculate Security Directory offset in PE header
+	var securityDirOffset int64
+	if sr.patcher.File().Machine == 0x8664 { // x64
+		// PE signature(4) + COFF(20) + Magic(2) + ... + DataDirectory offset
+		securityDirOffset = int64(peOffset) + 4 + 20 + 112 + 8*4 // DataDirectory[4]
+	} else { // x86
+		securityDirOffset = int64(peOffset) + 4 + 20 + 96 + 8*4
+	}
+
+	// Clear Security Directory entry (8 bytes: RVA + Size)
+	emptyDir := make([]byte, 8)
+	if _, err := sr.patcher.file.WriteAt(emptyDir, securityDirOffset); err != nil {
+		return fmt.Errorf("清除证书目录失败: %w", err)
+	}
+
+	// Optionally truncate file to remove certificate data
+	if truncate {
+		stat, err := sr.patcher.file.Stat()
+		if err != nil {
+			return fmt.Errorf("获取文件信息失败: %w", err)
+		}
+
+		newSize := int64(certOffset)
+		if newSize > 0 && newSize < stat.Size() {
+			if err := sr.patcher.file.Truncate(newSize); err != nil {
+				return fmt.Errorf("截断文件失败: %w", err)
+			}
+		}
+	}
+
+	// Update internal file size tracking
+	if truncate {
+		stat, err := sr.patcher.file.Stat()
+		if err == nil {
+			sr.patcher.filesize = stat.Size()
+		}
+	}
+
+	return nil
+}
+
+// GetSignatureInfo returns information about the digital signature.
+func (sr *SignatureRemover) GetSignatureInfo() (offset uint32, size uint32, exists bool) {
+	exists, offset, size = sr.HasSignature()
+	return
+}
