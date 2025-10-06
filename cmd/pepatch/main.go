@@ -21,16 +21,16 @@ var (
 	listImports    = flag.Bool("list-imports", false, "列出详细导入信息（所有函数）")
 
 	// Patch flags.
-	patchMode      = flag.Bool("patch", false, "修改模式：修改PE文件")
-	sectionName    = flag.String("section", "", "要修改的节区名称")
-	permissions    = flag.String("perms", "", "新的权限 (例如: R-X, RW-, RWX)")
-	entryPoint     = flag.String("entry", "", "新的入口点地址 (十六进制，例如: 0x1000)")
-	injectSection  = flag.String("inject-section", "", "注入新节区的名称 (最大8字符)")
-	sectionSize    = flag.Uint("section-size", 4096, "新节区大小（字节）")
-	sectionPerms   = flag.String("section-perms", "RWX", "新节区权限 (R-X, RW-, RWX)")
-	addImport      = flag.String("add-import", "", "添加DLL导入 (格式: DLL:Func1,Func2,...)")
-	updateCksum    = flag.Bool("update-checksum", true, "修改后更新校验和")
-	createBackup   = flag.Bool("backup", true, "修改前创建备份文件")
+	patchMode     = flag.Bool("patch", false, "修改模式：修改PE文件")
+	sectionName   = flag.String("section", "", "要修改的节区名称")
+	permissions   = flag.String("perms", "", "新的权限 (例如: R-X, RW-, RWX)")
+	entryPoint    = flag.String("entry", "", "新的入口点地址 (十六进制，例如: 0x1000)")
+	injectSection = flag.String("inject-section", "", "注入新节区的名称 (最大8字符)")
+	sectionSize   = flag.Uint("section-size", 4096, "新节区大小（字节）")
+	sectionPerms  = flag.String("section-perms", "RWX", "新节区权限 (R-X, RW-, RWX)")
+	addImport     = flag.String("add-import", "", "添加DLL导入 (格式: DLL:Func1,Func2,...)")
+	updateCksum   = flag.Bool("update-checksum", true, "修改后更新校验和")
+	createBackup  = flag.Bool("backup", true, "修改前创建备份文件")
 )
 
 func main() {

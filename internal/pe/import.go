@@ -5,7 +5,6 @@ import (
 	"debug/pe"
 	"encoding/binary"
 	"fmt"
-	"io"
 )
 
 // ImportModifier handles Import Table modifications.
@@ -204,10 +203,10 @@ type ExistingImportData struct {
 
 // ImportFunction represents an imported function.
 type ImportFunction struct {
-	Name    string
-	Ordinal uint16
+	Name        string
+	Ordinal     uint16
 	IsByOrdinal bool
-	Hint    uint16
+	Hint        uint16
 }
 
 // readAllImportData reads all existing import data for preservation.
@@ -265,75 +264,77 @@ func (im *ImportModifier) readImportThunks(rva uint32, is64bit bool) ([]uint64, 
 
 	var entries []uint64
 	var functions []ImportFunction
+	ptrSize := im.getPtrSize(is64bit)
+	ordinalFlag := im.getOrdinalFlag(is64bit)
 
-	ordinalFlag := uint64(0x80000000)
-	if is64bit {
-		ordinalFlag = 0x8000000000000000
-	}
-
-	for {
-		var thunkData uint64
-		if is64bit {
-			buf := make([]byte, 8)
-			_, err := im.patcher.file.ReadAt(buf, int64(offset))
-			if err != nil {
-				break
-			}
-			thunkData = binary.LittleEndian.Uint64(buf)
-			offset += 8
-		} else {
-			buf := make([]byte, 4)
-			_, err := im.patcher.file.ReadAt(buf, int64(offset))
-			if err != nil {
-				break
-			}
-			thunkData = uint64(binary.LittleEndian.Uint32(buf))
-			offset += 4
-		}
-
-		if thunkData == 0 {
+	for len(entries) < 10000 {
+		thunkData, err := im.readThunkValue(offset, is64bit)
+		if err != nil || thunkData == 0 {
 			break
 		}
 
 		entries = append(entries, thunkData)
-
-		// Parse function info.
-		var fn ImportFunction
-		if thunkData&ordinalFlag != 0 {
-			// Import by ordinal.
-			fn.IsByOrdinal = true
-			fn.Ordinal = uint16(thunkData & 0xFFFF)
-		} else {
-			// Import by name.
-			nameRVA := uint32(thunkData)
-			nameOffset, err := im.rvaToOffset(nameRVA)
-			if err != nil {
-				continue
-			}
-
-			// Read hint.
-			hintBuf := make([]byte, 2)
-			_, err = im.patcher.file.ReadAt(hintBuf, int64(nameOffset))
-			if err == nil {
-				fn.Hint = binary.LittleEndian.Uint16(hintBuf)
-			}
-
-			// Read name.
-			name, err := im.readStringAtOffset(nameOffset + 2)
-			if err != nil {
-				continue
-			}
-			fn.Name = name
-		}
-
+		fn := im.parseImportFunction(thunkData, ordinalFlag)
 		functions = append(functions, fn)
 
-		if len(entries) > 10000 {
-			break
-		}
+		offset += ptrSize
 	}
 
 	return entries, functions, nil
+}
+
+// readThunkValue reads a single thunk value from file.
+func (im *ImportModifier) readThunkValue(offset uint32, is64bit bool) (uint64, error) {
+	size := 4
+	if is64bit {
+		size = 8
+	}
+
+	buf := make([]byte, size)
+	_, err := im.patcher.file.ReadAt(buf, int64(offset))
+	if err != nil {
+		return 0, err
+	}
+
+	if is64bit {
+		return binary.LittleEndian.Uint64(buf), nil
+	}
+	return uint64(binary.LittleEndian.Uint32(buf)), nil
+}
+
+// parseImportFunction parses function information from thunk data.
+func (im *ImportModifier) parseImportFunction(thunkData, ordinalFlag uint64) ImportFunction {
+	var fn ImportFunction
+
+	if thunkData&ordinalFlag != 0 {
+		fn.IsByOrdinal = true
+		fn.Ordinal = uint16(thunkData & 0xFFFF)
+	} else {
+		nameRVA := uint32(thunkData)
+		nameOffset, err := im.rvaToOffset(nameRVA)
+		if err != nil {
+			return fn
+		}
+
+		hintBuf := make([]byte, 2)
+		if _, err := im.patcher.file.ReadAt(hintBuf, int64(nameOffset)); err == nil {
+			fn.Hint = binary.LittleEndian.Uint16(hintBuf)
+		}
+
+		if name, err := im.readStringAtOffset(nameOffset + 2); err == nil {
+			fn.Name = name
+		}
+	}
+
+	return fn
+}
+
+// getOrdinalFlag returns the ordinal flag based on architecture.
+func (im *ImportModifier) getOrdinalFlag(is64bit bool) uint64 {
+	if is64bit {
+		return 0x8000000000000000
+	}
+	return 0x80000000
 }
 
 // calculateCompleteImportDataSize calculates total size including existing imports.
@@ -356,8 +357,8 @@ func (im *ImportModifier) calculateCompleteImportDataSize(existing []ExistingImp
 
 	// INT and IAT for all imports.
 	for _, imp := range existing {
-		size += uint32(len(imp.INT)+1) * ptrSize  // INT
-		size += uint32(len(imp.IAT)+1) * ptrSize  // IAT
+		size += uint32(len(imp.INT)+1) * ptrSize // INT
+		size += uint32(len(imp.IAT)+1) * ptrSize // IAT
 	}
 	size += (uint32(len(newFunctions)) + 1) * ptrSize * 2 // New INT + IAT
 
@@ -380,13 +381,13 @@ func (im *ImportModifier) calculateCompleteImportDataSize(existing []ExistingImp
 
 // importDataLayout holds offset information for import table layout.
 type importDataLayout struct {
-	descriptorsOffset uint32
-	intOffsets        []uint32
-	iatOffsets        []uint32
-	dllNameOffsets    []uint32
-	newINTOffset      uint32
-	newIATOffset      uint32
-	newDLLNameOffset  uint32
+	descriptorsOffset  uint32
+	intOffsets         []uint32
+	iatOffsets         []uint32
+	dllNameOffsets     []uint32
+	newINTOffset       uint32
+	newIATOffset       uint32
+	newDLLNameOffset   uint32
 	newFuncNameOffsets []uint32
 }
 
@@ -418,9 +419,9 @@ func (im *ImportModifier) buildCompleteImportData(section *pe.Section, existing 
 // calculateLayout computes offset layout for all import data components.
 func (im *ImportModifier) calculateLayout(existing []ExistingImportData, newDLL string, newFunctions []string, ptrSize uint32) importDataLayout {
 	layout := importDataLayout{
-		intOffsets:        make([]uint32, len(existing)),
-		iatOffsets:        make([]uint32, len(existing)),
-		dllNameOffsets:    make([]uint32, len(existing)),
+		intOffsets:         make([]uint32, len(existing)),
+		iatOffsets:         make([]uint32, len(existing)),
+		dllNameOffsets:     make([]uint32, len(existing)),
 		newFuncNameOffsets: make([]uint32, len(newFunctions)),
 	}
 
@@ -545,7 +546,6 @@ func (im *ImportModifier) writeThunkEntry(data []byte, pos uint32, value uint64,
 		binary.LittleEndian.PutUint32(data[pos:], uint32(value))
 	}
 }
-
 
 // encodeDescriptor encodes an ImportDescriptor to bytes.
 func encodeDescriptor(buf []byte, desc ImportDescriptor) {
@@ -691,74 +691,26 @@ func (im *ImportModifier) readImportFunctions(desc ImportDescriptor) ([]string, 
 		return nil, fmt.Errorf("no INT")
 	}
 
-	offset, err := im.rvaToOffset(desc.OriginalFirstThunk)
+	is64bit := im.is64Bit()
+	_, importFuncs, err := im.readImportThunks(desc.OriginalFirstThunk, is64bit)
 	if err != nil {
 		return nil, err
 	}
 
-	is64bit := false
-	if _, ok := im.patcher.peFile.OptionalHeader.(*pe.OptionalHeader64); ok {
-		is64bit = true
-	}
+	return im.formatFunctionList(importFuncs), nil
+}
 
-	var functions []string
-	for {
-		var thunkData uint64
-		if is64bit {
-			buf := make([]byte, 8)
-			_, err := im.patcher.file.ReadAt(buf, int64(offset))
-			if err != nil && err != io.EOF {
-				break
-			}
-			thunkData = binary.LittleEndian.Uint64(buf)
-			offset += 8
+// formatFunctionList converts ImportFunction slice to string slice.
+func (im *ImportModifier) formatFunctionList(funcs []ImportFunction) []string {
+	result := make([]string, len(funcs))
+	for i, fn := range funcs {
+		if fn.IsByOrdinal {
+			result[i] = fmt.Sprintf("Ordinal_%d", fn.Ordinal)
 		} else {
-			buf := make([]byte, 4)
-			_, err := im.patcher.file.ReadAt(buf, int64(offset))
-			if err != nil && err != io.EOF {
-				break
-			}
-			thunkData = uint64(binary.LittleEndian.Uint32(buf))
-			offset += 4
-		}
-
-		if thunkData == 0 {
-			break
-		}
-
-		// Check if import by ordinal.
-		ordinalFlag := uint64(0x80000000)
-		if is64bit {
-			ordinalFlag = 0x8000000000000000
-		}
-
-		if thunkData&ordinalFlag != 0 {
-			ordinal := thunkData & 0xFFFF
-			functions = append(functions, fmt.Sprintf("Ordinal_%d", ordinal))
-		} else {
-			// Import by name - thunkData is RVA to IMAGE_IMPORT_BY_NAME.
-			nameRVA := uint32(thunkData)
-			nameOffset, err := im.rvaToOffset(nameRVA)
-			if err != nil {
-				continue
-			}
-
-			// Skip hint (2 bytes).
-			nameOffset += 2
-
-			name, err := im.readStringAtOffset(nameOffset)
-			if err != nil {
-				continue
-			}
-			functions = append(functions, name)
-		}
-
-		if len(functions) > 1000 { // Sanity check.
-			break
+			result[i] = fn.Name
 		}
 	}
-
-	return functions, nil
+	return result
 }
 
 // readStringAtOffset reads a null-terminated string at file offset.

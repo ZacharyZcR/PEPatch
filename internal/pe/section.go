@@ -76,16 +76,16 @@ func (s *SectionInjector) InjectSection(name string, data []byte, characteristic
 
 	// Create section header (40 bytes).
 	sectionHeader := make([]byte, 40)
-	copy(sectionHeader[0:8], sectionName[:])                              // Name.
-	binary.LittleEndian.PutUint32(sectionHeader[8:12], virtualSize)       // VirtualSize.
+	copy(sectionHeader[0:8], sectionName[:])                               // Name.
+	binary.LittleEndian.PutUint32(sectionHeader[8:12], virtualSize)        // VirtualSize.
 	binary.LittleEndian.PutUint32(sectionHeader[12:16], newVirtualAddress) // VirtualAddress.
-	binary.LittleEndian.PutUint32(sectionHeader[16:20], rawSize)          // SizeOfRawData.
-	binary.LittleEndian.PutUint32(sectionHeader[20:24], newFileOffset)    // PointerToRawData.
-	binary.LittleEndian.PutUint32(sectionHeader[24:28], 0)                // PointerToRelocations.
-	binary.LittleEndian.PutUint32(sectionHeader[28:32], 0)                // PointerToLinenumbers.
-	binary.LittleEndian.PutUint16(sectionHeader[32:34], 0)                // NumberOfRelocations.
-	binary.LittleEndian.PutUint16(sectionHeader[34:36], 0)                // NumberOfLinenumbers.
-	binary.LittleEndian.PutUint32(sectionHeader[36:40], characteristics)  // Characteristics.
+	binary.LittleEndian.PutUint32(sectionHeader[16:20], rawSize)           // SizeOfRawData.
+	binary.LittleEndian.PutUint32(sectionHeader[20:24], newFileOffset)     // PointerToRawData.
+	binary.LittleEndian.PutUint32(sectionHeader[24:28], 0)                 // PointerToRelocations.
+	binary.LittleEndian.PutUint32(sectionHeader[28:32], 0)                 // PointerToLinenumbers.
+	binary.LittleEndian.PutUint16(sectionHeader[32:34], 0)                 // NumberOfRelocations.
+	binary.LittleEndian.PutUint16(sectionHeader[34:36], 0)                 // NumberOfLinenumbers.
+	binary.LittleEndian.PutUint32(sectionHeader[36:40], characteristics)   // Characteristics.
 
 	// Write section header.
 	_, err = s.patcher.file.WriteAt(sectionHeader, newSectionHeaderOffset)
@@ -196,13 +196,13 @@ func (p *Patcher) InjectSection(name string, data []byte, characteristics uint32
 
 // GetSectionCharacteristics returns common section characteristics.
 type SectionCharacteristics struct {
-	Code             uint32 // Executable code section.
-	InitializedData  uint32 // Initialized data section.
+	Code              uint32 // Executable code section.
+	InitializedData   uint32 // Initialized data section.
 	UninitializedData uint32 // Uninitialized data section.
-	ReadOnly         uint32 // Read-only section.
-	ReadWrite        uint32 // Read-write section.
-	ReadExecute      uint32 // Read-execute section.
-	ReadWriteExecute uint32 // Read-write-execute section.
+	ReadOnly          uint32 // Read-only section.
+	ReadWrite         uint32 // Read-write section.
+	ReadExecute       uint32 // Read-execute section.
+	ReadWriteExecute  uint32 // Read-write-execute section.
 }
 
 // CommonCharacteristics provides commonly used section characteristics.
