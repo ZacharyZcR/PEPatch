@@ -15,6 +15,8 @@ var (
 	// Analysis flags.
 	verbose        = flag.Bool("v", false, "详细模式：显示所有导入/导出函数")
 	suspiciousOnly = flag.Bool("s", false, "仅显示可疑节区（RWX权限）")
+	detectCaves    = flag.Bool("caves", false, "检测Code Caves（可注入代码的空隙）")
+	minCaveSize    = flag.Uint("min-cave-size", 32, "Code Cave最小大小（字节）")
 
 	// Patch flags.
 	patchMode    = flag.Bool("patch", false, "修改模式：修改PE文件")
@@ -66,6 +68,13 @@ func analyzePE(filepath string) error {
 	reporter.SetVerbose(*verbose)
 	reporter.SetSuspiciousOnly(*suspiciousOnly)
 	reporter.Print()
+
+	// Detect code caves if requested.
+	if *detectCaves {
+		if err := detectCodeCaves(filepath); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -205,6 +214,51 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, data, 0666)
 }
 
+func detectCodeCaves(filepath string) error {
+	reader, err := pe.Open(filepath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+
+	detector := pe.NewCodeCaveDetector(reader.RawFile(), reader.File())
+	caves, err := detector.FindCodeCaves(uint32(*minCaveSize))
+	if err != nil {
+		return err
+	}
+
+	// Print results.
+	cyan := color.New(color.FgCyan, color.Bold)
+	green := color.New(color.FgGreen)
+	yellow := color.New(color.FgYellow)
+
+	fmt.Println()
+	_, _ = cyan.Printf("========== Code Caves (最小 %d 字节) ==========\n", *minCaveSize)
+
+	if len(caves) == 0 {
+		_, _ = yellow.Println("未发现符合条件的 Code Caves")
+		return nil
+	}
+
+	_, _ = green.Printf("发现 %d 个可用 Code Caves:\n\n", len(caves))
+
+	for i, cave := range caves {
+		fillPattern := "0x00"
+		if cave.FillByte == 0xCC {
+			fillPattern = "0xCC (INT3)"
+		}
+
+		fmt.Printf("%d. 节区: %s\n", i+1, cave.Section)
+		fmt.Printf("   文件偏移: 0x%08X\n", cave.Offset)
+		fmt.Printf("   RVA:      0x%08X\n", cave.RVA)
+		fmt.Printf("   大小:     %d 字节\n", cave.Size)
+		fmt.Printf("   填充:     %s\n", fillPattern)
+		fmt.Println()
+	}
+
+	return nil
+}
+
 func printUsage() {
 	cyan := color.New(color.FgCyan, color.Bold)
 	_, _ = cyan.Println("\nPEPatch - PE文件诊断和修改工具")
@@ -212,8 +266,10 @@ func printUsage() {
 	fmt.Println("\n分析模式用法:")
 	fmt.Println("  pepatch [选项] <PE文件路径>")
 	fmt.Println("\n分析选项:")
-	fmt.Println("  -v    详细模式：显示所有导入/导出函数（不限制数量）")
-	fmt.Println("  -s    仅显示可疑节区（RWX权限，潜在安全风险）")
+	fmt.Println("  -v              详细模式：显示所有导入/导出函数（不限制数量）")
+	fmt.Println("  -s              仅显示可疑节区（RWX权限，潜在安全风险）")
+	fmt.Println("  -caves          检测Code Caves（可注入代码的空隙）")
+	fmt.Println("  -min-cave-size  Code Cave最小大小（字节，默认: 32）")
 
 	fmt.Println("\n修改模式用法:")
 	fmt.Println("  pepatch -patch [选项] <PE文件路径>")
@@ -231,6 +287,8 @@ func printUsage() {
 	fmt.Println("  pepatch C:\\Windows\\System32\\notepad.exe")
 	fmt.Println("  pepatch -v C:\\Windows\\System32\\kernel32.dll")
 	fmt.Println("  pepatch -s suspicious.exe")
+	fmt.Println("  pepatch -caves program.exe")
+	fmt.Println("  pepatch -caves -min-cave-size 64 program.exe")
 
 	fmt.Println("\n  # 修改节区权限（安全加固）")
 	fmt.Println("  pepatch -patch -section .text -perms R-X program.exe")
