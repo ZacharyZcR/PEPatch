@@ -200,7 +200,7 @@ func (p *Patcher) InjectSection(name string, data []byte, characteristics uint32
 	return injector.InjectSection(name, data, characteristics)
 }
 
-// GetSectionCharacteristics returns common section characteristics.
+// SectionCharacteristics holds common PE section characteristics constants.
 type SectionCharacteristics struct {
 	Code              uint32 // Executable code section.
 	InitializedData   uint32 // Initialized data section.

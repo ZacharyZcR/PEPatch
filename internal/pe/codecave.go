@@ -56,7 +56,7 @@ func (d *CodeCaveDetector) findInSection(section *pe.Section, minSize uint32) ([
 	}
 
 	var caves []CodeCave
-	var caveStart int = -1
+	caveStart := -1
 	var fillByte byte
 
 	// Scan for consecutive fill bytes (0x00 or 0xCC).

@@ -257,7 +257,7 @@ func addDLLImport(patcher *pe.Patcher) error {
 	// Parse format: "DLL:Func1,Func2,Func3"
 	parts := strings.SplitN(*addImport, ":", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("导入格式错误，应为: DLL:Func1,Func2,...")
+		return fmt.Errorf("导入格式错误，应为 DLL:Func1,Func2")
 	}
 
 	dllName := strings.TrimSpace(parts[0])

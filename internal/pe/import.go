@@ -1050,7 +1050,7 @@ func (im *ImportModifier) calculateLayout(existing []ExistingImportData, newDLL 
 }
 
 // writeDescriptors writes import descriptors to data buffer.
-func (im *ImportModifier) writeDescriptors(data []byte, layout *importDataLayout, existing []ExistingImportData, baseRVA uint32, newDLL string) {
+func (im *ImportModifier) writeDescriptors(data []byte, layout *importDataLayout, existing []ExistingImportData, baseRVA uint32, _ string) {
 	for i := range existing {
 		desc := ImportDescriptor{
 			OriginalFirstThunk: baseRVA + layout.intOffsets[i],
