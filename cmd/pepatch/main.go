@@ -32,6 +32,10 @@ var (
 	sectionSize   = flag.Uint("section-size", 4096, "新节区大小（字节）")
 	sectionPerms  = flag.String("section-perms", "RWX", "新节区权限 (R-X, RW-, RWX)")
 	addImport     = flag.String("add-import", "", "添加DLL导入 (格式: DLL:Func1,Func2,...)")
+	addExport     = flag.String("add-export", "", "添加导出函数（函数名）")
+	modifyExport  = flag.String("modify-export", "", "修改导出函数（函数名）")
+	removeExport  = flag.String("remove-export", "", "删除导出函数（函数名）")
+	exportRVA     = flag.String("export-rva", "", "导出函数RVA地址（十六进制，用于add-export和modify-export）")
 	updateCksum   = flag.Bool("update-checksum", true, "修改后更新校验和")
 	createBackup  = flag.Bool("backup", true, "修改前创建备份文件")
 )
@@ -103,8 +107,9 @@ func analyzePE(filepath string) error {
 }
 
 func patchPE(filepath string) error {
-	if *sectionName == "" && *entryPoint == "" && *injectSection == "" && *addImport == "" {
-		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, -inject-section, 或 -add-import)")
+	if *sectionName == "" && *entryPoint == "" && *injectSection == "" && *addImport == "" &&
+		*addExport == "" && *modifyExport == "" && *removeExport == "" {
+		return fmt.Errorf("必须指定至少一个修改操作 (-section, -entry, -inject-section, -add-import, 或导出操作)")
 	}
 
 	if err := createBackupIfNeeded(filepath); err != nil {
@@ -151,6 +156,27 @@ func applyPatches(patcher *pe.Patcher) error {
 
 	if *addImport != "" {
 		if err := addDLLImport(patcher); err != nil {
+			return err
+		}
+		modified = true
+	}
+
+	if *addExport != "" {
+		if err := addExportFunc(patcher); err != nil {
+			return err
+		}
+		modified = true
+	}
+
+	if *modifyExport != "" {
+		if err := modifyExportFunc(patcher); err != nil {
+			return err
+		}
+		modified = true
+	}
+
+	if *removeExport != "" {
+		if err := removeExportFunc(patcher); err != nil {
 			return err
 		}
 		modified = true
@@ -301,6 +327,48 @@ func addDLLImport(patcher *pe.Patcher) error {
 	return patcher.AddImport(dllName, functions)
 }
 
+func addExportFunc(patcher *pe.Patcher) error {
+	if *exportRVA == "" {
+		return fmt.Errorf("添加导出时必须指定 -export-rva")
+	}
+
+	rva, err := parseHexAddress(*exportRVA)
+	if err != nil {
+		return fmt.Errorf("导出RVA地址格式错误: %w", err)
+	}
+
+	cyan := color.New(color.FgCyan)
+	_, _ = cyan.Printf("正在添加导出函数: %s (RVA: 0x%X)...\n", *addExport, rva)
+
+	modifier := pe.NewExportModifier(patcher)
+	return modifier.AddExport(*addExport, rva)
+}
+
+func modifyExportFunc(patcher *pe.Patcher) error {
+	if *exportRVA == "" {
+		return fmt.Errorf("修改导出时必须指定 -export-rva")
+	}
+
+	rva, err := parseHexAddress(*exportRVA)
+	if err != nil {
+		return fmt.Errorf("导出RVA地址格式错误: %w", err)
+	}
+
+	cyan := color.New(color.FgCyan)
+	_, _ = cyan.Printf("正在修改导出函数: %s (新RVA: 0x%X)...\n", *modifyExport, rva)
+
+	modifier := pe.NewExportModifier(patcher)
+	return modifier.ModifyExport(*modifyExport, rva)
+}
+
+func removeExportFunc(patcher *pe.Patcher) error {
+	cyan := color.New(color.FgCyan)
+	_, _ = cyan.Printf("正在删除导出函数: %s...\n", *removeExport)
+
+	modifier := pe.NewExportModifier(patcher)
+	return modifier.RemoveExport(*removeExport)
+}
+
 func printPatchSuccess() {
 	green := color.New(color.FgGreen, color.Bold)
 	fmt.Println()
@@ -315,6 +383,15 @@ func printPatchSuccess() {
 	}
 	if *addImport != "" {
 		_, _ = green.Printf("✓ 成功添加导入: %s\n", *addImport)
+	}
+	if *addExport != "" {
+		_, _ = green.Printf("✓ 成功添加导出: %s (RVA: %s)\n", *addExport, *exportRVA)
+	}
+	if *modifyExport != "" {
+		_, _ = green.Printf("✓ 成功修改导出: %s (新RVA: %s)\n", *modifyExport, *exportRVA)
+	}
+	if *removeExport != "" {
+		_, _ = green.Printf("✓ 成功删除导出: %s\n", *removeExport)
 	}
 	fmt.Println()
 }
@@ -482,6 +559,10 @@ func printUsage() {
 	fmt.Println("  -section-size <大小>  新节区大小（字节，默认: 4096）")
 	fmt.Println("  -section-perms <RWX>  新节区权限（默认: RWX）")
 	fmt.Println("  -add-import <导入>    添加DLL导入（格式: DLL:Func1,Func2,...）")
+	fmt.Println("  -add-export <名称>    添加导出函数（需配合 -export-rva）")
+	fmt.Println("  -modify-export <名称> 修改导出函数RVA（需配合 -export-rva）")
+	fmt.Println("  -remove-export <名称> 删除导出函数")
+	fmt.Println("  -export-rva <地址>    导出函数RVA地址（十六进制，例如: 0x1000）")
 	fmt.Println("  -backup               修改前创建备份（默认: true）")
 	fmt.Println("  -update-checksum      修改后更新校验和（默认: true）")
 
@@ -510,6 +591,10 @@ func printUsage() {
 	fmt.Println("\n  # 添加DLL导入")
 	fmt.Println("  pepatch -patch -add-import user32.dll:MessageBoxA,MessageBoxW program.exe")
 	fmt.Println("  pepatch -patch -add-import ws2_32.dll:WSAStartup,socket,connect program.exe")
+	fmt.Println("\n  # 导出表修改")
+	fmt.Println("  pepatch -patch -add-export MyFunction -export-rva 0x1000 mydll.dll")
+	fmt.Println("  pepatch -patch -modify-export ExistingFunc -export-rva 0x2000 mydll.dll")
+	fmt.Println("  pepatch -patch -remove-export OldFunction mydll.dll")
 	fmt.Println("\n  # 组合修改")
 	fmt.Println("  pepatch -patch -section .text -perms R-X -entry 0x1000 file.exe")
 	fmt.Println("  pepatch -patch -entry 0x5000 -backup=false file.exe")

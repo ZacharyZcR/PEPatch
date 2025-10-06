@@ -19,6 +19,7 @@
 - **入口点修改**：修改程序起始执行地址
 - **节区注入**：添加自定义节区
 - **导入表注入**：添加新的DLL导入，完美保留原始IAT
+- **导出表修改**：添加、修改、删除DLL导出函数
 
 ### 🎯 技术亮点
 - ✅ **保留原始IAT**：导入注入技术完全保留原始Import Address Table位置
@@ -102,6 +103,11 @@ pepatch -patch -inject-section .newsec -section-size 8192 program.exe
 
 # 导入表注入
 pepatch -patch -add-import user32.dll:MessageBoxA,MessageBoxW program.exe
+
+# 导出表修改
+pepatch -patch -add-export MyFunction -export-rva 0x1000 mydll.dll       # 添加导出
+pepatch -patch -modify-export OldFunc -export-rva 0x2000 mydll.dll      # 修改导出
+pepatch -patch -remove-export UnusedFunc mydll.dll                       # 删除导出
 ```
 
 ## 📖 文档

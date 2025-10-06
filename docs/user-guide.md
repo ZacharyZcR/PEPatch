@@ -210,6 +210,40 @@ pepatch -patch -add-import kernel32.dll:Sleep,CreateThread,ExitProcess program.e
 
 详细技术说明参见[导入注入技术](import-injection.md)。
 
+### 导出表修改
+
+**核心功能**：修改DLL的导出表，添加、修改或删除导出函数。
+
+```bash
+# 添加新的导出函数
+pepatch -patch -add-export MyFunction -export-rva 0x1000 mydll.dll
+
+# 修改现有导出函数的RVA
+pepatch -patch -modify-export ExistingFunc -export-rva 0x2000 mydll.dll
+
+# 删除导出函数
+pepatch -patch -remove-export OldFunction mydll.dll
+```
+
+**使用场景**：
+- **API重定向**：修改导出函数RVA实现函数Hook
+- **功能扩展**：向DLL添加新的导出函数
+- **接口清理**：移除废弃的导出函数
+- **伪装技术**：修改导出表以改变DLL的表面功能
+
+**技术特性**：
+- ✅ 完整重建导出表（Export Directory Table, EDT, ONT）
+- ✅ 自动排序函数名（Windows要求按字母序）
+- ✅ 支持命名导出和序号导出
+- ✅ 自动计算ordinal索引
+- ✅ 创建独立的.edata节区
+
+**注意事项**：
+- 修改系统DLL可能导致系统不稳定，仅用于测试
+- 添加导出时需要确保RVA指向有效代码
+- 修改导出会使数字签名失效
+- 建议在隔离环境中测试
+
 ### 组合修改
 
 ```bash
@@ -484,6 +518,10 @@ echo "部署包已准备就绪: $DIST_DIR"
 | `-section-size` | 节区大小 | `-section-size 8192` |
 | `-section-perms` | 节区权限 | `-section-perms RWX` |
 | `-add-import` | 添加导入 | `-add-import dll:func1,func2` |
+| `-add-export` | 添加导出 | `-add-export MyFunc -export-rva 0x1000` |
+| `-modify-export` | 修改导出 | `-modify-export Func -export-rva 0x2000` |
+| `-remove-export` | 删除导出 | `-remove-export OldFunc` |
+| `-export-rva` | 导出函数RVA | `-export-rva 0x1000` |
 | `-backup` | 创建备份 | `-backup=false` |
 | `-update-checksum` | 更新校验和 | `-update-checksum=false` |
 

@@ -8,6 +8,7 @@
 - [使用问题](#使用问题)
 - [修改问题](#修改问题)
 - [导入注入问题](#导入注入问题)
+- [导出表修改问题](#导出表修改问题)
 - [技术问题](#技术问题)
 - [平台问题](#平台问题)
 
@@ -360,6 +361,90 @@ dumpbin /imports modified.exe
 ./modified.exe
 # 如果能正常运行，说明注入成功
 ```
+
+## 导出表修改问题
+
+### Q: 如何添加导出函数？
+
+A: 使用`-patch -add-export`：
+```bash
+# 格式：-add-export 函数名 -export-rva RVA地址
+pepatch -patch -add-export MyFunction -export-rva 0x1000 mydll.dll
+
+# RVA必须指向有效的代码地址
+# 可以通过分析PE文件确定合适的RVA
+```
+
+### Q: 如何修改导出函数的RVA？
+
+A: 使用`-patch -modify-export`：
+```bash
+pepatch -patch -modify-export ExistingFunc -export-rva 0x2000 mydll.dll
+
+# 这会修改现有导出函数的入口地址
+# 可用于实现函数Hook或重定向
+```
+
+### Q: 如何删除导出函数？
+
+A: 使用`-patch -remove-export`：
+```bash
+pepatch -patch -remove-export UnusedFunction mydll.dll
+
+# 这会从导出表中完全移除该函数
+# 注意：依赖该函数的程序会崩溃
+```
+
+### Q: 修改导出表安全吗？
+
+A: 取决于使用场景：
+
+**安全的场景**：
+- 修改自己开发的DLL
+- 在隔离的测试环境中实验
+- 学习PE格式和逆向工程
+
+**危险的场景**：
+- 修改系统DLL（可能导致系统崩溃）
+- 修改有数字签名的DLL（签名会失效）
+- 在生产环境中使用未充分测试的修改
+
+**建议**：
+1. 始终在副本上操作
+2. 在虚拟机中测试
+3. 保留备份文件
+4. 仅用于合法的安全研究
+
+### Q: 导出表修改的技术原理？
+
+A: PEPatch使用"完整重建导出表"方案：
+
+1. **读取现有导出**：解析Export Directory、Name Pointer Table、Ordinal Table
+2. **修改导出列表**：添加/修改/删除导出函数
+3. **排序函数名**：Windows要求导出函数按字母序排列（用于二分查找）
+4. **创建新节区**：注入.edata节区存储新导出表
+5. **写入导出数据**：按PE格式写入Export Directory、Address Table、Name/Ordinal Table
+6. **更新PE头**：修改Data Directory[0]指向新导出表
+
+技术特点：
+- ✅ 完全重建所有导出表结构
+- ✅ 自动计算RVA偏移
+- ✅ 支持命名导出和序号导出
+- ✅ 自动对齐和填充
+
+### Q: 为什么导出表比导入表简单？
+
+A: 因为：
+
+1. **无需保留原位置**：导出表不像IAT那样可能被代码硬编码引用
+2. **只有一个表**：导入表有多个DLL各自的描述符，导出表只有一个
+3. **不涉及加载器**：导出是被动的，导入需要加载器主动解析
+4. **结构更紧凑**：导出表结构相对简单，主要是地址数组和名称数组
+
+但导出表也有挑战：
+- 必须保持字母序（Windows要求）
+- Ordinal索引计算要正确
+- RVA必须指向有效代码
 
 ## 技术问题
 

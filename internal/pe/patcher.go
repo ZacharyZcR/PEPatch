@@ -266,3 +266,31 @@ func (p *Patcher) Reload() error {
 
 	return nil
 }
+
+// ReadRVA reads data from a Relative Virtual Address.
+func (p *Patcher) ReadRVA(rva, size uint32) ([]byte, error) {
+	// Convert RVA to file offset
+	var offset uint32
+	found := false
+
+	for _, section := range p.peFile.Sections {
+		if rva >= section.VirtualAddress && rva < section.VirtualAddress+section.VirtualSize {
+			offset = rva - section.VirtualAddress + section.Offset
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return nil, fmt.Errorf("RVA 0x%X 不在任何节区内", rva)
+	}
+
+	// Read data
+	data := make([]byte, size)
+	_, err := p.file.ReadAt(data, int64(offset))
+	if err != nil {
+		return nil, fmt.Errorf("读取RVA 0x%X 失败: %w", rva, err)
+	}
+
+	return data, nil
+}
