@@ -297,6 +297,62 @@ pepatch -patch -remove-signature program.exe
 pepatch program.exe  # 应显示"未签名"
 ```
 
+### TLS回调注入
+
+**核心功能**：向PE文件添加TLS (Thread Local Storage) 回调函数，在主入口点之前执行。
+
+```bash
+# 添加TLS回调（RVA地址）
+pepatch -patch -add-tls-callback 0x1000 program.exe
+
+# 十六进制地址（支持无0x前缀）
+pepatch -patch -add-tls-callback 2A40 program.exe
+```
+
+**使用场景**：
+- **反调试技术**：在调试器附加前执行检测代码
+- **早期初始化**：在main函数前设置全局状态
+- **代码保护**：提前执行解密或反篡改检查
+- **逆向研究**：分析TLS回调机制
+
+**技术特性**：
+- ✅ 保留现有TLS回调（新回调添加到数组开头）
+- ✅ 支持PE32和PE32+（32位/64位）
+- ✅ 自动处理VA/RVA转换
+- ✅ NULL-terminated回调数组
+- ✅ 创建独立的.tlscb节区
+
+**工作原理**：
+1. 检查PE文件是否已有TLS目录
+2. 读取现有TLS回调数组
+3. 将新回调添加到数组开头
+4. 创建.tlscb节区存储新数组
+5. 更新TLS目录的AddressOfCallBacks指针
+
+**注意事项**：
+- 大多数PE文件**没有TLS目录**（只有使用线程本地存储的程序才有）
+- 没有TLS目录的文件无法添加回调
+- 新回调的RVA必须指向有效代码
+- TLS回调在主程序入口点**之前**执行
+- 调试器可能在TLS回调处断点
+
+**典型工作流**：
+```bash
+# 1. 检查文件是否有TLS目录
+pepatch program.exe  # 查看【TLS回调】部分
+
+# 2. 如果有TLS目录，添加回调
+pepatch -patch -add-tls-callback 0x5000 program.exe
+
+# 3. 验证回调已添加
+pepatch program.exe  # 应显示新增的回调地址
+```
+
+**限制**：
+- 只能用于已有TLS目录的PE文件
+- 创建全新TLS目录需要更复杂的操作（当前不支持）
+- TLS回调数量有限制（通常100个以内）
+
 ### 组合修改
 
 ```bash
@@ -577,6 +633,7 @@ echo "部署包已准备就绪: $DIST_DIR"
 | `-export-rva` | 导出函数RVA | `-export-rva 0x1000` |
 | `-remove-signature` | 移除数字签名 | `-remove-signature` |
 | `-truncate-cert` | 截断证书数据 | `-truncate-cert=false` |
+| `-add-tls-callback` | 添加TLS回调 | `-add-tls-callback 0x1000` |
 | `-backup` | 创建备份 | `-backup=false` |
 | `-update-checksum` | 更新校验和 | `-update-checksum=false` |
 

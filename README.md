@@ -21,6 +21,7 @@
 - **导入表注入**：添加新的DLL导入，完美保留原始IAT
 - **导出表修改**：添加、修改、删除DLL导出函数
 - **数字签名移除**：移除PE文件的数字签名（可选截断）
+- **TLS回调注入**：添加在主入口点前执行的TLS回调函数
 
 ### 🎯 技术亮点
 - ✅ **保留原始IAT**：导入注入技术完全保留原始Import Address Table位置
@@ -113,6 +114,9 @@ pepatch -patch -remove-export UnusedFunc mydll.dll                       # 删�
 # 数字签名移除
 pepatch -patch -remove-signature program.exe                             # 移除签名（截断文件）
 pepatch -patch -remove-signature -truncate-cert=false program.exe       # 移除签名（保留数据）
+
+# TLS回调注入
+pepatch -patch -add-tls-callback 0x1000 program.exe                      # 添加TLS回调
 ```
 
 ## 📖 文档

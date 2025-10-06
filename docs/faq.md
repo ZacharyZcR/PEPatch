@@ -596,6 +596,261 @@ A: 可能，取决于文件和杀毒软件：
 - 移除正常软件的签名可能被视为篡改
 - 始终在隔离环境中进行此类操作
 
+## TLS回调注入问题
+
+### Q: 如何添加TLS回调？
+
+A: 使用`-patch -add-tls-callback`：
+```bash
+# 格式：-add-tls-callback RVA地址（十六进制）
+pepatch -patch -add-tls-callback 0x1000 program.exe
+
+# 支持无0x前缀
+pepatch -patch -add-tls-callback 2A40 program.exe
+```
+
+### Q: 什么是TLS回调？
+
+A: TLS (Thread Local Storage) 回调是在程序主入口点**之前**执行的函数。
+
+**执行顺序**：
+```
+1. Windows加载器加载PE文件
+2. 执行TLS回调函数（如果有）  ← 在这里
+3. 执行主程序入口点（main/WinMain）
+```
+
+**合法用途**：
+- 线程局部变量初始化
+- 全局状态设置
+- 早期环境检测
+
+**恶意用途**：
+- 反调试（在调试器附加前执行）
+- 提前解密代码
+- 检测分析环境
+
+### Q: 为什么提示"文件没有TLS目录"？
+
+A: **这是正常的！** 大多数PE文件没有TLS目录。
+
+**统计**：
+- ✅ 约95%的程序没有TLS目录
+- ✅ 只有少数使用线程本地存储的程序才有
+- ✅ 简单的控制台程序通常没有
+
+**如何检查**：
+```bash
+pepatch program.exe
+
+# 查看输出中的【TLS回调】部分
+TLS回调: 无  ← 没有TLS目录
+TLS回调: 1 个回调函数  ← 有TLS目录
+```
+
+**如果没有TLS目录**：
+- 无法使用当前功能添加TLS回调
+- 创建全新TLS目录需要更复杂的操作（未实现）
+- 可以寻找已有TLS目录的测试文件
+
+### Q: 如何找到有TLS目录的测试文件？
+
+A: 几种方法：
+
+**1. 编写测试程序**（C/C++）：
+```c
+// tls_test.c
+#include <windows.h>
+#include <stdio.h>
+
+void NTAPI TlsCallback(PVOID h, DWORD reason, PVOID pv) {
+    printf("TLS Callback executed! Reason: %lu\n", reason);
+}
+
+#pragma comment(linker, "/INCLUDE:_tls_used")
+#pragma comment(linker, "/INCLUDE:tls_callback_func")
+
+#pragma data_seg(".CRT$XLB")
+PIMAGE_TLS_CALLBACK tls_callback_func = TlsCallback;
+#pragma data_seg()
+
+int main() {
+    printf("Main function\n");
+    return 0;
+}
+```
+
+编译：
+```bash
+cl tls_test.c /link /OUT:tls_test.exe
+```
+
+**2. 常见有TLS的程序**：
+- 使用OpenMP的程序
+- 多线程密集型应用
+- 某些反调试软件
+- 部分恶意软件样本（仅用于研究）
+
+**3. 批量检测**：
+```bash
+# Linux/macOS
+for file in *.exe; do
+    if pepatch "$file" | grep -q "TLS回调:.*个回调"; then
+        echo "有TLS: $file"
+    fi
+done
+```
+
+### Q: TLS回调的RVA地址如何确定？
+
+A: RVA (Relative Virtual Address) 必须指向有效代码。
+
+**方法1：使用现有代码**
+```bash
+# 1. 分析程序找到合适的函数地址
+pepatch program.exe
+
+# 2. 查看入口点或其他函数的RVA
+入口点: 0x1000  ← 可以使用这个
+
+# 3. 添加回调
+pepatch -patch -add-tls-callback 0x1000 program.exe
+```
+
+**方法2：注入自定义代码**
+```bash
+# 1. 先注入包含代码的节区
+pepatch -patch -inject-section .mycode -section-size 4096 program.exe
+
+# 2. 查看新节区的RVA
+pepatch program.exe | grep .mycode
+.mycode  虚拟地址: 0x5000  ← 使用这个
+
+# 3. 在新节区写入代码（需要手工或工具）
+# 然后添加TLS回调
+pepatch -patch -add-tls-callback 0x5000 program.exe
+```
+
+**注意**：
+- RVA不是文件偏移，而是加载到内存后的相对地址
+- 不正确的RVA会导致程序崩溃
+
+### Q: 添加TLS回调后程序崩溃？
+
+A: 检查以下几点：
+
+**1. RVA是否正确**：
+```bash
+# RVA必须指向有效代码
+# 不能指向数据区或空白区域
+```
+
+**2. 调试器问题**：
+```bash
+# TLS回调在入口点前执行，调试器可能断在这里
+# 尝试不使用调试器直接运行
+./program.exe
+```
+
+**3. 多次添加**：
+```bash
+# 不要重复添加同一个回调
+# 恢复备份后重试
+mv program.exe.bak program.exe
+```
+
+**4. 架构匹配**：
+```bash
+# 检查是32位还是64位
+pepatch program.exe | grep "架构"
+
+# TLS回调的代码必须匹配程序架构
+```
+
+### Q: TLS回调的技术原理是什么？
+
+A: PEPatch的TLS回调注入流程：
+
+**1. 读取现有TLS目录**：
+```
+位置：Data Directory[9]
+结构：IMAGE_TLS_DIRECTORY32/64
+关键字段：AddressOfCallBacks（指向回调数组）
+```
+
+**2. 读取现有回调数组**：
+```
+格式：VA1, VA2, ..., NULL（NULL-terminated）
+VA：虚拟地址（VA = ImageBase + RVA）
+```
+
+**3. 构建新数组**：
+```
+新数组 = [新回调VA, 旧回调VA1, 旧回调VA2, ..., NULL]
+新回调添加到数组开头（最先执行）
+```
+
+**4. 注入.tlscb节区**：
+```
+创建新节区存储新数组
+权限：READ（只需读取）
+```
+
+**5. 更新TLS目录**：
+```
+修改AddressOfCallBacks指向新数组
+原TLS目录其他字段保持不变
+```
+
+**关键技术点**：
+- VA/RVA转换（VA = ImageBase + RVA）
+- PE32用4字节指针，PE32+用8字节指针
+- NULL-terminated数组（0表示结束）
+- AddressOfCallBacks在TLS目录偏移12（32位）或24（64位）
+
+### Q: 可以添加多个TLS回调吗？
+
+A: 可以，但需要多次执行：
+
+```bash
+# 第一次添加
+pepatch -patch -add-tls-callback 0x1000 program.exe
+
+# 第二次添加（会添加到最前面）
+pepatch -patch -add-tls-callback 0x2000 program.exe
+
+# 最终执行顺序：0x2000 → 0x1000 → 原有回调
+```
+
+**注意**：
+- 新回调总是添加到数组开头
+- 最后添加的最先执行
+- 建议不超过10个回调（虽然理论上限100）
+
+### Q: TLS回调与入口点修改的区别？
+
+A: 两者都能改变执行流程，但有本质区别：
+
+**TLS回调**：
+- ✅ 在主入口点**之前**执行
+- ✅ 可以有多个回调
+- ✅ Windows加载器自动调用
+- ✅ 难以被简单的分析工具发现
+- ❌ 需要文件已有TLS目录
+
+**入口点修改**：
+- ✅ 改变程序开始地址
+- ✅ 所有PE文件都支持
+- ✅ 简单直接
+- ❌ 只有一个入口点
+- ❌ 容易被发现
+
+**使用建议**：
+- 反调试：使用TLS回调（更隐蔽）
+- 代码重定向：使用入口点修改（更通用）
+- 早期初始化：使用TLS回调
+- 替换主函数：使用入口点修改
+
 ## 技术问题
 
 ### Q: PEPatch支持哪些PE格式？
