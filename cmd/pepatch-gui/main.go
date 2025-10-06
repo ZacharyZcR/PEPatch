@@ -3,12 +3,14 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/ZacharyZcR/PEPatch/internal/pe"
@@ -26,8 +28,10 @@ type guiComponents struct {
 
 func main() {
 	myApp := app.New()
+	myApp.Settings().SetTheme(&customTheme{})
+
 	myWindow := myApp.NewWindow("PEPatch - PE文件分析与修改工具")
-	myWindow.Resize(fyne.NewSize(900, 700))
+	myWindow.Resize(fyne.NewSize(1000, 800))
 
 	components := createGUIComponents(myWindow)
 	mainContent := createMainLayout(components)
@@ -296,4 +300,67 @@ func patchEntryPoint(filepath, entryStr string) error {
 	}
 
 	return patcher.UpdateChecksum()
+}
+
+// customTheme provides high-contrast dark theme for better readability.
+type customTheme struct{}
+
+func (t *customTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	switch name {
+	case theme.ColorNameBackground:
+		return color.RGBA{R: 30, G: 30, B: 30, A: 255} // Dark background
+	case theme.ColorNameButton:
+		return color.RGBA{R: 50, G: 120, B: 200, A: 255} // Blue buttons
+	case theme.ColorNameDisabled:
+		return color.RGBA{R: 100, G: 100, B: 100, A: 255}
+	case theme.ColorNameForeground:
+		return color.RGBA{R: 240, G: 240, B: 240, A: 255} // Bright white text
+	case theme.ColorNameHover:
+		return color.RGBA{R: 70, G: 140, B: 220, A: 255}
+	case theme.ColorNameInputBackground:
+		return color.RGBA{R: 45, G: 45, B: 45, A: 255} // Slightly lighter than background
+	case theme.ColorNamePlaceHolder:
+		return color.RGBA{R: 150, G: 150, B: 150, A: 255}
+	case theme.ColorNamePrimary:
+		return color.RGBA{R: 60, G: 150, B: 220, A: 255}
+	case theme.ColorNameFocus:
+		return color.RGBA{R: 80, G: 160, B: 240, A: 255}
+	case theme.ColorNameSelection:
+		return color.RGBA{R: 60, G: 120, B: 180, A: 255}
+	case theme.ColorNameSuccess:
+		return color.RGBA{R: 80, G: 200, B: 120, A: 255}
+	case theme.ColorNameWarning:
+		return color.RGBA{R: 255, G: 180, B: 50, A: 255}
+	case theme.ColorNameError:
+		return color.RGBA{R: 230, G: 80, B: 80, A: 255}
+	default:
+		return theme.DefaultTheme().Color(name, variant)
+	}
+}
+
+func (t *customTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
+	return theme.DefaultTheme().Icon(name)
+}
+
+func (t *customTheme) Font(style fyne.TextStyle) fyne.Resource {
+	return theme.DefaultTheme().Font(style)
+}
+
+func (t *customTheme) Size(name fyne.ThemeSizeName) float32 {
+	switch name {
+	case theme.SizeNameText:
+		return 14 // Larger text
+	case theme.SizeNameHeadingText:
+		return 18
+	case theme.SizeNameSubHeadingText:
+		return 16
+	case theme.SizeNameCaptionText:
+		return 12
+	case theme.SizeNamePadding:
+		return 6
+	case theme.SizeNameInlineIcon:
+		return 20
+	default:
+		return theme.DefaultTheme().Size(name)
+	}
 }
