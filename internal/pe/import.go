@@ -30,6 +30,8 @@ type ImportDescriptor struct {
 }
 
 // AddImport adds a new DLL import with specified functions.
+// WARNING: Current implementation is simplified and replaces the entire import table.
+// Production use requires copying all existing import data.
 func (im *ImportModifier) AddImport(dllName string, functions []string) error {
 	// Find import directory.
 	importDir, err := im.getImportDirectory()
@@ -219,16 +221,98 @@ func (im *ImportModifier) calculateImportDataSize(dllName string, functions []st
 
 // buildImportData builds the complete import data structure.
 func (im *ImportModifier) buildImportData(section *pe.Section, dllName string, functions []string, existingDescriptors []ImportDescriptor) error {
-	// This is a simplified implementation.
-	// A full implementation would need to:
-	// 1. Copy existing import descriptors
-	// 2. Add new descriptor
-	// 3. Build INT and IAT
-	// 4. Write all strings
-	// 5. Update all RVAs
+	baseRVA := section.VirtualAddress
 
-	// For now, return not implemented.
-	return fmt.Errorf("Import Table修改功能正在开发中")
+	is64bit := false
+	if _, ok := im.patcher.peFile.OptionalHeader.(*pe.OptionalHeader64); ok {
+		is64bit = true
+	}
+
+	ptrSize := uint32(4)
+	if is64bit {
+		ptrSize = 8
+	}
+
+	// Layout offsets.
+	numDescriptors := len(existingDescriptors) + 1 // +1 for new DLL
+	descriptorsSize := uint32((numDescriptors + 1) * 20) // +1 for null terminator
+
+	intOffset := descriptorsSize
+	iatOffset := intOffset + (uint32(len(functions)) + 1) * ptrSize
+
+	dllNameOffset := iatOffset + (uint32(len(functions)) + 1) * ptrSize
+	funcNamesOffset := dllNameOffset + uint32(len(dllName)) + 1
+
+	// Allocate data buffer.
+	dataSize := im.calculateImportDataSize(dllName, functions, numDescriptors)
+	data := make([]byte, dataSize)
+
+	// 1. Copy existing descriptors.
+	for i, desc := range existingDescriptors {
+		encodeDescriptor(data[i*20:(i+1)*20], desc)
+	}
+
+	// 2. Create new descriptor for our DLL.
+	newDesc := ImportDescriptor{
+		OriginalFirstThunk: baseRVA + intOffset,
+		TimeDateStamp:      0,
+		ForwarderChain:     0,
+		Name:               baseRVA + dllNameOffset,
+		FirstThunk:         baseRVA + iatOffset,
+	}
+	encodeDescriptor(data[len(existingDescriptors)*20:(len(existingDescriptors)+1)*20], newDesc)
+
+	// 3. Null descriptor already initialized (data is zero-filled).
+
+	// 4. Build INT and IAT.
+	currentFuncNameOffset := funcNamesOffset
+	for i, fn := range functions {
+		// RVA to IMAGE_IMPORT_BY_NAME.
+		nameRVA := baseRVA + currentFuncNameOffset
+
+		// Write to INT.
+		intPos := intOffset + uint32(i)*ptrSize
+		iatPos := iatOffset + uint32(i)*ptrSize
+
+		if is64bit {
+			binary.LittleEndian.PutUint64(data[intPos:intPos+8], uint64(nameRVA))
+			binary.LittleEndian.PutUint64(data[iatPos:iatPos+8], uint64(nameRVA))
+		} else {
+			binary.LittleEndian.PutUint32(data[intPos:intPos+4], nameRVA)
+			binary.LittleEndian.PutUint32(data[iatPos:iatPos+4], nameRVA)
+		}
+
+		// Write IMAGE_IMPORT_BY_NAME (hint + name + null).
+		binary.LittleEndian.PutUint16(data[currentFuncNameOffset:currentFuncNameOffset+2], 0) // Hint = 0
+		copy(data[currentFuncNameOffset+2:], fn)
+		data[currentFuncNameOffset+2+uint32(len(fn))] = 0 // Null terminator
+
+		currentFuncNameOffset += 2 + uint32(len(fn)) + 1
+	}
+
+	// Null terminators for INT and IAT already initialized.
+
+	// 5. Write DLL name.
+	copy(data[dllNameOffset:], dllName)
+	data[dllNameOffset+uint32(len(dllName))] = 0
+
+	// Write data to section.
+	fileOffset := int64(section.Offset)
+	_, err := im.patcher.file.WriteAt(data, fileOffset)
+	if err != nil {
+		return fmt.Errorf("写入导入数据失败: %w", err)
+	}
+
+	return nil
+}
+
+// encodeDescriptor encodes an ImportDescriptor to bytes.
+func encodeDescriptor(buf []byte, desc ImportDescriptor) {
+	binary.LittleEndian.PutUint32(buf[0:4], desc.OriginalFirstThunk)
+	binary.LittleEndian.PutUint32(buf[4:8], desc.TimeDateStamp)
+	binary.LittleEndian.PutUint32(buf[8:12], desc.ForwarderChain)
+	binary.LittleEndian.PutUint32(buf[12:16], desc.Name)
+	binary.LittleEndian.PutUint32(buf[16:20], desc.FirstThunk)
 }
 
 // updateImportDirectory updates the Import Directory in Optional Header.
@@ -267,6 +351,47 @@ func (p *Patcher) AddImport(dllName string, functions []string) error {
 // ListImports returns detailed import information.
 func (p *Patcher) ListImports() ([]ImportInfo, error) {
 	modifier := NewImportModifier(p)
+	importDir, err := modifier.getImportDirectory()
+	if err != nil {
+		return nil, err
+	}
+
+	descriptors, err := modifier.readImportDescriptors(importDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var imports []ImportInfo
+	for _, desc := range descriptors {
+		dllName, err := modifier.readString(desc.Name)
+		if err != nil {
+			continue
+		}
+
+		functions, err := modifier.readImportFunctions(desc)
+		if err != nil {
+			functions = []string{"(error reading functions)"}
+		}
+
+		imports = append(imports, ImportInfo{
+			DLL:       dllName,
+			Functions: functions,
+		})
+	}
+
+	return imports, nil
+}
+
+// ListImportsFromReader returns detailed import information from a Reader.
+func ListImportsFromReader(reader *Reader) ([]ImportInfo, error) {
+	// Create a temporary patcher-like structure for reading.
+	modifier := &ImportModifier{
+		patcher: &Patcher{
+			file:   reader.RawFile(),
+			peFile: reader.File(),
+		},
+	}
+
 	importDir, err := modifier.getImportDirectory()
 	if err != nil {
 		return nil, err

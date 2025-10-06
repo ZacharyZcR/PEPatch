@@ -17,6 +17,7 @@ var (
 	suspiciousOnly = flag.Bool("s", false, "仅显示可疑节区（RWX权限）")
 	detectCaves    = flag.Bool("caves", false, "检测Code Caves（可注入代码的空隙）")
 	minCaveSize    = flag.Uint("min-cave-size", 32, "Code Cave最小大小（字节）")
+	listImports    = flag.Bool("list-imports", false, "列出详细导入信息（所有函数）")
 
 	// Patch flags.
 	patchMode      = flag.Bool("patch", false, "修改模式：修改PE文件")
@@ -75,6 +76,13 @@ func analyzePE(filepath string) error {
 	// Detect code caves if requested.
 	if *detectCaves {
 		if err := detectCodeCaves(filepath); err != nil {
+			return err
+		}
+	}
+
+	// List detailed imports if requested.
+	if *listImports {
+		if err := listDetailedImports(filepath); err != nil {
 			return err
 		}
 	}
@@ -316,6 +324,36 @@ func detectCodeCaves(filepath string) error {
 	return nil
 }
 
+func listDetailedImports(filepath string) error {
+	reader, err := pe.Open(filepath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+
+	imports, err := pe.ListImportsFromReader(reader)
+	if err != nil {
+		return err
+	}
+
+	// Print results.
+	cyan := color.New(color.FgCyan, color.Bold)
+	green := color.New(color.FgGreen)
+
+	fmt.Println()
+	_, _ = cyan.Printf("========== 详细导入表 (%d 个DLL) ==========\n", len(imports))
+
+	for i, imp := range imports {
+		_, _ = green.Printf("\n%d. %s (%d 个函数)\n", i+1, imp.DLL, len(imp.Functions))
+		for j, fn := range imp.Functions {
+			fmt.Printf("   %d. %s\n", j+1, fn)
+		}
+	}
+
+	fmt.Println()
+	return nil
+}
+
 func printUsage() {
 	cyan := color.New(color.FgCyan, color.Bold)
 	_, _ = cyan.Println("\nPEPatch - PE文件诊断和修改工具")
@@ -327,6 +365,7 @@ func printUsage() {
 	fmt.Println("  -s              仅显示可疑节区（RWX权限，潜在安全风险）")
 	fmt.Println("  -caves          检测Code Caves（可注入代码的空隙）")
 	fmt.Println("  -min-cave-size  Code Cave最小大小（字节，默认: 32）")
+	fmt.Println("  -list-imports   列出详细导入信息（所有函数，无截断）")
 
 	fmt.Println("\n修改模式用法:")
 	fmt.Println("  pepatch -patch [选项] <PE文件路径>")
@@ -349,6 +388,7 @@ func printUsage() {
 	fmt.Println("  pepatch -s suspicious.exe")
 	fmt.Println("  pepatch -caves program.exe")
 	fmt.Println("  pepatch -caves -min-cave-size 64 program.exe")
+	fmt.Println("  pepatch -list-imports program.exe")
 
 	fmt.Println("\n  # 修改节区权限（安全加固）")
 	fmt.Println("  pepatch -patch -section .text -perms R-X program.exe")
