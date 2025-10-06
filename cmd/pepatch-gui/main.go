@@ -225,6 +225,9 @@ func analyzePEFile(filepath string) (string, error) {
 
 	// Format output
 	var output strings.Builder
+
+	// Basic Info
+	output.WriteString("========== 基本信息 ==========\n")
 	output.WriteString(fmt.Sprintf("文件路径: %s\n", info.FilePath))
 	output.WriteString(fmt.Sprintf("文件大小: %d 字节\n", info.FileSize))
 	output.WriteString(fmt.Sprintf("架构: %s\n", info.Architecture))
@@ -233,30 +236,121 @@ func analyzePEFile(filepath string) (string, error) {
 	output.WriteString(fmt.Sprintf("镜像基址: 0x%X\n", info.ImageBase))
 
 	if info.Checksum != nil {
+		output.WriteString("校验和: ")
 		if info.Checksum.Valid {
-			output.WriteString(fmt.Sprintf("校验和: ✓ 有效 (0x%08X)\n", info.Checksum.Stored))
+			output.WriteString(fmt.Sprintf("✓ 有效 (0x%08X)\n", info.Checksum.Stored))
 		} else {
-			output.WriteString(fmt.Sprintf("校验和: ✗ 无效 (存储: 0x%08X, 计算: 0x%08X)\n",
+			output.WriteString(fmt.Sprintf("✗ 无效 (存储: 0x%08X, 计算: 0x%08X)\n",
 				info.Checksum.Stored, info.Checksum.Computed))
 		}
 	}
 
-	output.WriteString(fmt.Sprintf("\n节区信息 (%d 个):\n", len(info.Sections)))
-	for _, section := range info.Sections {
-		output.WriteString(fmt.Sprintf("  %s: 权限=%s, 熵值=%.2f\n",
-			section.Name, section.Permissions, section.Entropy))
+	// Digital Signature
+	if info.Signature != nil {
+		output.WriteString("\n========== 数字签名 ==========\n")
+		if info.Signature.IsSigned {
+			if len(info.Signature.Certificates) > 0 {
+				cert := info.Signature.Certificates[0]
+				if cert.IsValid {
+					output.WriteString(fmt.Sprintf("签名者: ✓ %s\n", cert.Subject))
+				} else {
+					output.WriteString(fmt.Sprintf("签名者: ✗ %s (已过期)\n", cert.Subject))
+				}
+				output.WriteString(fmt.Sprintf("颁发者: %s\n", cert.Issuer))
+				output.WriteString(fmt.Sprintf("有效期: %s - %s\n",
+					cert.NotBefore.Format("2006-01-02"), cert.NotAfter.Format("2006-01-02")))
+			}
+		} else {
+			output.WriteString("未签名\n")
+		}
 	}
 
-	output.WriteString(fmt.Sprintf("\n导入表 (%d 个DLL):\n", len(info.Imports)))
+	// Resources
+	if info.Resources != nil && (info.Resources.VersionInfo != nil || info.Resources.HasIcon) {
+		output.WriteString("\n========== 资源信息 ==========\n")
+		if v := info.Resources.VersionInfo; v != nil {
+			if v.FileDescription != "" {
+				output.WriteString(fmt.Sprintf("文件描述: %s\n", v.FileDescription))
+			}
+			if v.FileVersion != "" {
+				output.WriteString(fmt.Sprintf("文件版本: %s\n", v.FileVersion))
+			}
+			if v.ProductName != "" {
+				output.WriteString(fmt.Sprintf("产品名称: %s\n", v.ProductName))
+			}
+			if v.CompanyName != "" {
+				output.WriteString(fmt.Sprintf("公司名称: %s\n", v.CompanyName))
+			}
+		}
+		if info.Resources.HasIcon {
+			output.WriteString(fmt.Sprintf("图标: 是 (%d 个)\n", info.Resources.IconCount))
+		}
+	}
+
+	// TLS Callbacks
+	if info.TLS != nil && info.TLS.HasTLS && len(info.TLS.Callbacks) > 0 {
+		output.WriteString("\n========== TLS 回调 ==========\n")
+		output.WriteString(fmt.Sprintf("⚠ 发现 %d 个 TLS 回调函数 (可疑)\n", len(info.TLS.Callbacks)))
+		for i, callback := range info.TLS.Callbacks {
+			if i >= 5 {
+				output.WriteString(fmt.Sprintf("  ... (还有 %d 个回调)\n", len(info.TLS.Callbacks)-5))
+				break
+			}
+			output.WriteString(fmt.Sprintf("  %d. 0x%016X\n", i+1, callback))
+		}
+	}
+
+	// Relocations
+	if info.Relocations != nil && info.Relocations.HasRelocations {
+		output.WriteString("\n========== 重定位表 ==========\n")
+		output.WriteString("✓ 支持 ASLR (地址空间布局随机化)\n")
+		output.WriteString(fmt.Sprintf("重定位块数量: %d\n", info.Relocations.BlockCount))
+		output.WriteString(fmt.Sprintf("重定位项总数: %d\n", info.Relocations.TotalEntries))
+	}
+
+	// Sections
+	output.WriteString(fmt.Sprintf("\n========== 节区信息 (%d 个) ==========\n", len(info.Sections)))
+	for _, section := range info.Sections {
+		output.WriteString(fmt.Sprintf("  %s:\n", section.Name))
+		output.WriteString(fmt.Sprintf("    虚拟地址: 0x%08X\n", section.VirtualAddress))
+		output.WriteString(fmt.Sprintf("    虚拟大小: %d 字节\n", section.VirtualSize))
+		output.WriteString(fmt.Sprintf("    权限: %s\n", section.Permissions))
+		output.WriteString(fmt.Sprintf("    熵值: %.2f\n", section.Entropy))
+	}
+
+	// Imports
+	output.WriteString(fmt.Sprintf("\n========== 导入表 (%d 个DLL) ==========\n", len(info.Imports)))
 	for i, imp := range info.Imports {
-		if i >= 10 {
-			output.WriteString(fmt.Sprintf("  ... (还有 %d 个DLL)\n", len(info.Imports)-10))
+		if i >= 20 {
+			output.WriteString(fmt.Sprintf("  ... (还有 %d 个DLL)\n", len(info.Imports)-20))
 			break
 		}
-		output.WriteString(fmt.Sprintf("  %s (%d 个函数)\n", imp.DLL, len(imp.Functions)))
+		output.WriteString(fmt.Sprintf("%d. %s (%d 个函数)\n", i+1, imp.DLL, len(imp.Functions)))
+
+		// Show first 5 functions
+		maxFuncs := 5
+		if len(imp.Functions) > 0 && imp.Functions[0] != "(symbols not individually listed)" {
+			for j, fn := range imp.Functions {
+				if j >= maxFuncs {
+					output.WriteString(fmt.Sprintf("     ... (还有 %d 个函数)\n", len(imp.Functions)-maxFuncs))
+					break
+				}
+				output.WriteString(fmt.Sprintf("     - %s\n", fn))
+			}
+		}
 	}
 
-	output.WriteString(fmt.Sprintf("\n导出表 (%d 个函数)\n", len(info.Exports)))
+	// Exports
+	if len(info.Exports) > 0 {
+		output.WriteString(fmt.Sprintf("\n========== 导出表 (%d 个函数) ==========\n", len(info.Exports)))
+		for i, exp := range info.Exports {
+			if i >= 20 {
+				output.WriteString(fmt.Sprintf("  ... (还有 %d 个函数)\n", len(info.Exports)-20))
+				break
+			}
+			output.WriteString(fmt.Sprintf("%d. %s\n", i+1, exp))
+		}
+	}
 
 	return output.String(), nil
 }
