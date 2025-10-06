@@ -97,6 +97,12 @@ func (s *SectionInjector) InjectSection(name string, data []byte, characteristic
 	alignedData := make([]byte, rawSize)
 	copy(alignedData, data)
 
+	// Extend file to accommodate new section.
+	newFileSize := int64(newFileOffset + rawSize)
+	if err := s.patcher.ExtendFileSize(newFileSize); err != nil {
+		return fmt.Errorf("扩展文件失败: %w", err)
+	}
+
 	// Write section data.
 	_, err = s.patcher.file.WriteAt(alignedData, int64(newFileOffset))
 	if err != nil {

@@ -86,8 +86,12 @@ func (im *ImportModifier) AddImport(dllName string, functions []string) error {
 		return err
 	}
 
+	// Calculate Import Directory size (just the descriptor table, not all data).
+	numDescriptors := len(existingData) + 1 // existing + new
+	importDirSize := uint32((numDescriptors + 1) * 20) // +1 for null descriptor
+
 	// Update Import Directory and IAT Directory in Optional Header.
-	if err := im.updateImportDirectory(newSection.VirtualAddress, dataSize, iatInfo); err != nil {
+	if err := im.updateImportDirectory(newSection.VirtualAddress, importDirSize, iatInfo); err != nil {
 		return err
 	}
 
@@ -691,6 +695,16 @@ func (im *ImportModifier) updateImportDirectory(rva, size uint32, iatInfo IATInf
 	_, err = im.patcher.file.WriteAt(dirData, boundDirOffset)
 	if err != nil {
 		return fmt.Errorf("清除Bound Import目录失败: %w", err)
+	}
+
+	// Clear Delay Import Directory (index 13) if present.
+	// Delay imports reference the old import table, which is now invalid.
+	delayDirOffset := dataDirOffset + (13 * 8)
+	binary.LittleEndian.PutUint32(dirData[0:4], 0)
+	binary.LittleEndian.PutUint32(dirData[4:8], 0)
+	_, err = im.patcher.file.WriteAt(dirData, delayDirOffset)
+	if err != nil {
+		return fmt.Errorf("清除Delay Import目录失败: %w", err)
 	}
 
 	return nil
