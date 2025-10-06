@@ -19,6 +19,9 @@ var (
 	detectCaves    = flag.Bool("caves", false, "检测Code Caves（可注入代码的空隙）")
 	minCaveSize    = flag.Uint("min-cave-size", 32, "Code Cave最小大小（字节）")
 	listImports    = flag.Bool("list-imports", false, "列出详细导入信息（所有函数）")
+	analyzeDeps    = flag.Bool("deps", false, "分析依赖关系（递归检测所有DLL依赖）")
+	maxDepth       = flag.Uint("max-depth", 3, "依赖分析最大深度（默认: 3）")
+	flatList       = flag.Bool("flat", false, "依赖分析使用扁平列表格式（默认: 树状）")
 
 	// Patch flags.
 	patchMode     = flag.Bool("patch", false, "修改模式：修改PE文件")
@@ -85,6 +88,13 @@ func analyzePE(filepath string) error {
 	// List detailed imports if requested.
 	if *listImports {
 		if err := listDetailedImports(filepath); err != nil {
+			return err
+		}
+	}
+
+	// Analyze dependencies if requested.
+	if *analyzeDeps {
+		if err := analyzeDependencies(filepath); err != nil {
 			return err
 		}
 	}
@@ -404,6 +414,46 @@ func listDetailedImports(filepath string) error {
 	return nil
 }
 
+func analyzeDependencies(filepath string) error {
+	cyan := color.New(color.FgCyan, color.Bold)
+	green := color.New(color.FgGreen)
+	red := color.New(color.FgRed)
+
+	fmt.Println()
+	_, _ = cyan.Printf("========== 依赖分析 ==========\n")
+
+	// Analyze dependencies.
+	analysis, err := pe.AnalyzeDependencies(filepath, int(*maxDepth))
+	if err != nil {
+		return fmt.Errorf("依赖分析失败: %w", err)
+	}
+
+	if *flatList {
+		// Print flat list.
+		pe.PrintDependencyList(analysis)
+	} else {
+		// Print dependency tree.
+		_, _ = green.Printf("\n依赖树:\n")
+		pe.PrintDependencyTree(analysis.Root, "", false)
+
+		// Print summary.
+		fmt.Printf("\n")
+		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		fmt.Printf("总计: %d 个依赖\n", analysis.TotalCount)
+		fmt.Printf("最大深度: %d\n", analysis.MaxDepth)
+
+		if len(analysis.MissingDeps) > 0 {
+			_, _ = red.Printf("\n⚠️  缺失 %d 个依赖:\n", len(analysis.MissingDeps))
+			for _, dll := range analysis.MissingDeps {
+				_, _ = red.Printf("  - %s\n", dll)
+			}
+		}
+	}
+
+	fmt.Println()
+	return nil
+}
+
 func printUsage() {
 	cyan := color.New(color.FgCyan, color.Bold)
 	_, _ = cyan.Println("\nPEPatch - PE文件诊断和修改工具")
@@ -416,6 +466,9 @@ func printUsage() {
 	fmt.Println("  -caves          检测Code Caves（可注入代码的空隙）")
 	fmt.Println("  -min-cave-size  Code Cave最小大小（字节，默认: 32）")
 	fmt.Println("  -list-imports   列出详细导入信息（所有函数，无截断）")
+	fmt.Println("  -deps           分析依赖关系（递归检测所有DLL依赖）")
+	fmt.Println("  -max-depth      依赖分析最大深度（默认: 3，防止无限递归）")
+	fmt.Println("  -flat           依赖分析使用扁平列表格式（默认: 树状）")
 
 	fmt.Println("\n修改模式用法:")
 	fmt.Println("  pepatch -patch [选项] <PE文件路径>")
@@ -440,6 +493,10 @@ func printUsage() {
 	fmt.Println("  pepatch -caves program.exe")
 	fmt.Println("  pepatch -caves -min-cave-size 64 program.exe")
 	fmt.Println("  pepatch -list-imports program.exe")
+	fmt.Println("\n  # 依赖分析")
+	fmt.Println("  pepatch -deps program.exe")
+	fmt.Println("  pepatch -deps -max-depth 5 program.exe")
+	fmt.Println("  pepatch -deps -flat program.exe")
 
 	fmt.Println("\n  # 修改节区权限（安全加固）")
 	fmt.Println("  pepatch -patch -section .text -perms R-X program.exe")

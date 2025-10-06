@@ -81,6 +81,10 @@ pepatch -caves -min-cave-size 64 program.exe
 
 # 详细导入表
 pepatch -list-imports program.exe
+
+# 依赖分析（递归检测所有DLL依赖）
+pepatch -deps program.exe
+pepatch -deps -flat program.exe  # 扁平列表格式
 ```
 
 ### PE文件修改

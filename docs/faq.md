@@ -109,6 +109,63 @@ pepatch -v program.exe > report.txt
 pepatch -v program.exe | tee report.txt
 ```
 
+### Q: 如何分析程序的依赖关系？
+
+A: 使用`-deps`选项进行依赖分析：
+
+```bash
+# 基础依赖分析（显示依赖树）
+pepatch -deps program.exe
+
+# 自定义递归深度（默认3层）
+pepatch -deps -max-depth 5 program.exe
+
+# 扁平列表格式（显示所有依赖路径）
+pepatch -deps -flat program.exe
+```
+
+**输出示例**：
+```
+依赖树:
+program.exe
+├── user32.dll (system)
+├── kernel32.dll (system)
+├── customlib.dll
+│   ├── msvcrt.dll (system)
+│   └── ws2_32.dll (system)
+└── helper.dll ⚠️ (NOT FOUND)
+
+总计: 5 个依赖
+⚠️  缺失 1 个依赖: helper.dll
+```
+
+**常见用途**：
+- 部署前检查缺失的DLL
+- 故障排查（程序无法启动）
+- 打包分发时确定需要的文件
+- 了解程序的依赖层次
+
+### Q: 依赖分析显示很多缺失的DLL，正常吗？
+
+A: 取决于具体情况：
+
+**正常情况**：
+- 系统DLL（如kernel32.dll、user32.dll）显示"system"标记 - 无需担心
+- 可选的DLL（程序可以动态检测是否存在）
+
+**需要解决**：
+- 自定义DLL缺失 - 需要放在程序同目录或系统路径
+- 第三方库缺失 - 需要安装相应的运行时库
+
+**验证方法**：
+```bash
+# 直接运行程序测试
+./program.exe
+
+# 如果能正常运行，说明缺失的DLL不是必需的
+# 如果提示缺少DLL，按照错误信息补充即可
+```
+
 ### Q: 如何批量分析多个文件？
 
 A: 使用shell循环：

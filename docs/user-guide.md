@@ -84,6 +84,49 @@ pepatch -list-imports program.exe
 
 列出所有DLL及其导入的完整函数列表。
 
+### 依赖分析
+
+```bash
+# 分析程序依赖关系（显示依赖树）
+pepatch -deps program.exe
+
+# 自定义递归深度
+pepatch -deps -max-depth 5 program.exe
+
+# 扁平列表格式（显示所有依赖和路径）
+pepatch -deps -flat program.exe
+```
+
+**依赖分析功能**：
+- **递归分析**：自动检测所有DLL依赖（包括间接依赖）
+- **依赖树显示**：直观展示依赖关系层次
+- **缺失检测**：识别无法找到的DLL
+- **路径定位**：显示每个DLL的完整路径
+- **循环检测**：检测循环依赖关系
+
+**输出示例**：
+```
+依赖树:
+program.exe
+├── user32.dll (system)
+├── kernel32.dll (system)
+├── customlib.dll
+│   ├── msvcrt.dll (system)
+│   └── ws2_32.dll (system)
+└── helper.dll ⚠️ (NOT FOUND)
+
+总计: 5 个依赖
+最大深度: 2
+⚠️  缺失 1 个依赖:
+  - helper.dll
+```
+
+**使用场景**：
+- **部署检查**：在部署前验证所有依赖是否齐全
+- **故障排查**：快速定位缺失的DLL
+- **依赖梳理**：了解程序的完整依赖关系
+- **精简打包**：确定需要分发的所有文件
+
 ### 组合使用
 
 ```bash
@@ -338,6 +381,51 @@ pepatch -caves target.exe
 
 # 2. 注入导入（自动加载DLL）
 pepatch -patch -add-import hook.dll:Initialize target.exe
+```
+
+### 场景5：部署前依赖检查
+
+```bash
+# 1. 分析程序依赖
+pepatch -deps myapp.exe
+
+# 2. 检查输出中的缺失DLL
+# 如果有 ⚠️ (NOT FOUND)，说明需要打包该DLL
+
+# 3. 使用扁平列表查看所有依赖路径
+pepatch -deps -flat myapp.exe > deps_report.txt
+
+# 4. 将非系统DLL复制到部署包
+# 根据输出的路径，复制所有需要的自定义DLL
+
+# 5. 在目标环境测试
+./myapp.exe
+```
+
+**自动化脚本示例**：
+```bash
+#!/bin/bash
+# 自动打包依赖的DLL
+
+APP="myapp.exe"
+DIST_DIR="dist"
+
+# 创建分发目录
+mkdir -p "$DIST_DIR"
+cp "$APP" "$DIST_DIR/"
+
+# 提取非系统依赖
+pepatch -deps -flat "$APP" | grep -v "(系统DLL)" | grep "→" | awk '{print $2}' > deps.txt
+
+# 复制依赖
+while read -r dll_path; do
+    if [ -f "$dll_path" ]; then
+        cp "$dll_path" "$DIST_DIR/"
+        echo "已复制: $(basename $dll_path)"
+    fi
+done < deps.txt
+
+echo "部署包已准备就绪: $DIST_DIR"
 ```
 
 ## 故障排查
